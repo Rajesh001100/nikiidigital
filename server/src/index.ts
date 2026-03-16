@@ -4,7 +4,7 @@ import { z } from "zod";
 import { Resend } from "resend";
 import { supabase } from "./db.js";
 
-const PORT = Number(process.env.PORT ?? 5174);
+const PORT = process.env.PORT || "10000";
 const ADMIN_KEY = process.env.ADMIN_KEY ?? "nikiidigital-admin";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -497,7 +497,7 @@ app.get("/api/registrations.csv", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`NikiiDigital API running on http://localhost:${PORT}`);
+app.listen(Number(PORT), "0.0.0.0", () => {
+  console.log(`NikiiDigital API running on port ${PORT}`);
 });
 
