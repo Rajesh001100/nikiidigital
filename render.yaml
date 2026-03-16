@@ -1,0 +1,31 @@
+services:
+  # Backend API
+  - type: web
+    name: nikiidigital-api
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 5174
+      - key: ADMIN_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+    rootDir: server
+
+  # Frontend Static Site
+  - type: web
+    name: nikiidigital-web
+    runtime: static
+    buildCommand: npm install && npm run build
+    publishDir: dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: nikiidigital-api
+          property: host
+    rootDir: web
