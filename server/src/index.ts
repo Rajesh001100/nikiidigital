@@ -57,6 +57,10 @@ app.use(
 );
 app.use(express.json({ limit: "250kb" }));
 
+app.get("/", (_req, res) => {
+  res.send("<h1>NiKii Digital API is Running</h1><p>This is the backend server. Please visit our website URL to view the home page.</p>");
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });

@@ -1,0 +1,21 @@
+﻿[dotenv@17.3.1] injecting env (12) from server\.env -- tip: ΓÜí∩╕Å secrets for agents: https://dotenvx.com/as2
+Checking Registrations...
+node.exe : Γ¥î Database 
+Error: TypeError: fetch 
+failed
+At line:1 char:1
++ & "C:\Program 
+Files\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (Γ¥î D  
+  atabase Er...r: fetch f   
+ ailed:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
