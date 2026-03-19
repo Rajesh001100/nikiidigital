@@ -1,8 +1,8 @@
-import type { RegistrationInput, RegistrationRow, Course } from '../types'
+import type { RegistrationInput, RegistrationRow, Course, Payment, Material, StudentDashboardData, AdminAnalytics } from '../types'
 
 const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ??
-  'http://localhost:5174'
+  ''
 
 type ApiError = { error: string; details?: unknown }
 
@@ -29,9 +29,9 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const err = (isJson ? await res.json() : null) as ApiError | null
-    const msg =
-      err?.error ?? `Request failed (${res.status} ${res.statusText})`
-    throw new Error(msg)
+    const error: any = new Error(err?.error ?? `Request failed (${res.status} ${res.statusText})`);
+    if (err?.details) error.details = err.details;
+    throw error;
   }
 
   if (!isJson) {
@@ -55,11 +55,19 @@ export async function getRegistrations(adminKey: string) {
   })
 }
 
-export async function updateRegistrationStatus(adminKey: string, id: number, status: 'Pending' | 'Confirmed' | 'Rejected') {
+export async function updateRegistrationStatus(adminKey: string, id: number, status: 'Pending' | 'Confirmed' | 'Rejected', discount_amount?: number) {
   return apiFetch<{ ok: true }>(`/api/registrations/${id}/status`, {
     method: 'PUT',
     adminKey,
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, discount_amount }),
+  })
+}
+
+export async function updateRegistration(adminKey: string, id: number, data: Partial<RegistrationRow>) {
+  return apiFetch<{ ok: true; registration: RegistrationRow }>(`/api/registrations/${id}`, {
+    method: 'PUT',
+    adminKey,
+    body: JSON.stringify(data),
   })
 }
 
@@ -68,6 +76,20 @@ export function registrationsCsvUrl() {
 }
 
 // --- Courses CMS API ---
+
+export async function getInitialData() {
+  return apiFetch<{
+    courses: Course[];
+    settings: {
+      batchTimes?: string[];
+      promoCodes?: { code: string; discount: string; description: string }[];
+      contactNumber?: string;
+      address?: string;
+    }
+  }>('/api/initial-data', {
+    headers: { 'Cache-Control': 'no-cache' }
+  })
+}
 
 export async function getCourses() {
   return apiFetch<{ courses: Course[] }>('/api/courses')
@@ -140,3 +162,88 @@ export async function getDashboardStats(adminKey: string) {
   }>('/api/dashboard-stats', { adminKey })
 }
 
+export async function getRegistrationStatus(mobile: string) {
+  return apiFetch<{ fullName: string; courseSelected: string; status: string; createdAt: string }>(
+    `/api/registration-status/${mobile}`,
+  )
+}
+export async function getPublicCertificate(id: string) {
+  const res = await fetch(`${API_URL}/api/public/certificates/${id}`);
+  if (!res.ok) throw new Error("Certificate not found");
+  return res.json();
+}
+
+export async function notifyCertificate(adminKey: string, id: number) {
+  const res = await fetch(`${API_URL}/api/registrations/${id}/certificate-notify`, {
+    method: 'POST',
+    headers: { 'x-admin-key': adminKey }
+  });
+  if (!res.ok) throw new Error("Failed to send notification");
+  return res.json();
+}
+
+// --- Student Portal API ---
+
+export async function studentLogin(mobileNumber: string, dateOfBirth: string) {
+  return apiFetch<{ student: RegistrationRow }>('/api/student/login', {
+    method: 'POST',
+    body: JSON.stringify({ mobileNumber, dateOfBirth })
+  })
+}
+
+export async function getStudentDashboard(id: number) {
+  return apiFetch<StudentDashboardData>(`/api/student/dashboard/${id}`)
+}
+
+// --- Admin Phase 4 Extensions ---
+
+export async function getAdminPayments(adminKey: string) {
+  return apiFetch<{
+    payments: Payment[];
+    summary: {
+      totalFullCount: number;
+      totalInstalment1Count: number;
+      pendingInst2Count: number;
+      totalRevenue: number;
+    };
+    pendingSecondInstalment: Payment[];
+  }>('/api/admin/payments', { adminKey })
+}
+
+export async function addAdminPayment(adminKey: string, payment: Omit<Payment, 'id' | 'date'>) {
+  return apiFetch<{ ok: true; payment: Payment }>('/api/admin/payments', {
+    method: 'POST',
+    adminKey,
+    body: JSON.stringify(payment)
+  })
+}
+
+export async function getAdminMaterials() {
+  return apiFetch<{ materials: Material[] }>('/api/admin/materials')
+}
+
+export async function addAdminMaterial(adminKey: string, material: Omit<Material, 'id' | 'created_at'>) {
+  return apiFetch<{ ok: true; material: Material }>('/api/admin/materials', {
+    method: 'POST',
+    adminKey,
+    body: JSON.stringify(material)
+  })
+}
+
+export async function deleteAdminMaterial(adminKey: string, id: number) {
+  return apiFetch<{ ok: true }>(`/api/admin/materials/${id}`, {
+    method: 'DELETE',
+    adminKey
+  })
+}
+
+export async function getAdminAnalytics(adminKey: string) {
+  return apiFetch<AdminAnalytics>('/api/admin/analytics', { adminKey })
+}
+
+export async function checkAbsentees(adminKey: string) {
+  return apiFetch<{ ok: true; alertsSent: number }>('/api/admin/check-absentees', {
+    method: 'POST',
+    adminKey
+  })
+}

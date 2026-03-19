@@ -2,9 +2,29 @@ import { useState, useEffect } from 'react'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
-import { createRegistration, getCourses, getSettings } from '../lib/api'
+import { createRegistration, getInitialData, getRegistrationStatus } from '../lib/api'
+import { fallbackCourses, fallbackSettings } from '../data/fallbackData'
 import type { Course } from '../types'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, ArrowRight, Search, CheckCircle2, Clock, XCircle, Award, Target, Zap, ShieldCheck } from 'lucide-react'
+
+// Skeleton Component
+const CourseSkeleton = () => (
+  <div className="rounded-[2.5rem] p-8 bg-white border border-slate-100 animate-pulse">
+    <div className="flex flex-col">
+      <div className="shrink-0 mb-6 h-16 w-16 rounded-2xl bg-slate-200" />
+      <div className="flex-1 space-y-4">
+        <div className="h-4 w-1/4 bg-slate-200 rounded" />
+        <div className="h-6 w-3/4 bg-slate-200 rounded" />
+        <div className="h-20 w-full bg-slate-50 rounded" />
+        <div className="flex gap-2">
+          <div className="h-6 w-16 bg-blue-50 rounded" />
+          <div className="h-6 w-16 bg-blue-50 rounded" />
+        </div>
+      </div>
+      <div className="mt-8 h-12 w-full bg-slate-100 rounded-xl" />
+    </div>
+  </div>
+)
 
 const Schema = z.object({
   fullName: z.string().min(2, 'Please enter your full name').max(100),
@@ -15,7 +35,7 @@ const Schema = z.object({
   highestQualification: z.string().min(1, 'Please select your qualification'),
   schoolCollegeName: z.string().min(2, 'Please enter your school/college name'),
   yearOfStudy: z.string().min(1, 'Please enter year of study'),
-  mobileNumber: z.string().min(10, 'Please enter a valid mobile number'),
+  mobileNumber: z.string().length(10, 'Please enter exactly 10 digit mobile number'),
   preferredBatchTime: z.string().min(1, 'Please select a batch time'),
   courseSelected: z.string().min(1, 'Please select a course'),
   howDidYouHear: z.string().min(1, 'Please tell us how you heard about us'),
@@ -28,12 +48,28 @@ type FormValues = z.infer<typeof Schema>
 export default function HomePage() {
   const [successId, setSuccessId] = useState<number | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [courses, setCourses] = useState<Course[]>([])
-  const [settings, setSettings] = useState<any>(null)
+  const [statusSearch, setStatusSearch] = useState('')
+  const [statusResult, setStatusResult] = useState<any>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [courses, setCourses] = useState<Course[]>(() => {
+    const saved = localStorage.getItem('nikii_courses');
+    return saved ? JSON.parse(saved) : fallbackCourses;
+  })
+  const [settings, setSettings] = useState<any>(() => {
+    const saved = localStorage.getItem('nikii_settings');
+    return saved ? JSON.parse(saved) : fallbackSettings;
+  })
 
   useEffect(() => {
-    getCourses().then(res => setCourses(res.courses))
-    getSettings().then(res => setSettings(res))
+    getInitialData().then(res => {
+      setCourses(res.courses);
+      setSettings(res.settings);
+      localStorage.setItem('nikii_courses', JSON.stringify(res.courses));
+      localStorage.setItem('nikii_settings', JSON.stringify(res.settings));
+    }).catch(err => {
+      console.error("HomePage: Failed to refresh dynamic data.", err);
+    });
   }, [])
 
   const form = useForm<FormValues>({
@@ -63,6 +99,19 @@ export default function HomePage() {
     }
   }
 
+  async function onCheckStatus(e: React.FormEvent) {
+    e.preventDefault()
+    const normalized = statusSearch.replace(/\D/g, '').slice(-10)
+    try {
+      const res = await getRegistrationStatus(normalized)
+      setStatusResult(res)
+    } catch (e: any) {
+      setStatusError(e.message || 'No registration found')
+    } finally {
+      setStatusLoading(false)
+    }
+  }
+
   const qualifications = [
     'Class 1 to 6',
     'Class 7 to 10',
@@ -84,14 +133,14 @@ export default function HomePage() {
   return (
     <div className="space-y-16 md:space-y-24 pb-20 animate-in fade-in duration-1000">
       {/* --- HERO SECTION --- */}
-      <section className="relative flex min-h-[70vh] flex-col items-center justify-center overflow-hidden rounded-[3rem] bg-white px-6 py-20 shadow-2xl lg:flex-row lg:gap-12 lg:px-16">
+      <section id="home" className="relative flex min-h-[70vh] flex-col items-center justify-center overflow-hidden rounded-[3rem] bg-white px-6 py-20 shadow-2xl lg:flex-row lg:gap-12 lg:px-16">
         <div className="relative z-10 flex-1 space-y-8 text-center lg:text-left">
-          <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-xs font-bold text-blue-600 ring-1 ring-blue-100">
+          <div className="flex items-center justify-center lg:justify-start gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-xs font-bold text-blue-600 ring-1 ring-blue-100 w-fit mx-auto lg:mx-0">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
             </span>
-            ISO 9001:2015 Certified Academy
+            State and Central Certified Academy
           </div>
           <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl md:text-7xl">
             Education is <br />
@@ -102,17 +151,11 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap justify-center gap-4 lg:justify-start">
             <button
-              onClick={() => document.getElementById('registration-form')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => document.getElementById('courses')?.scrollIntoView({ behavior: 'smooth' })}
               className="group flex items-center gap-2 rounded-2xl bg-blue-600 px-8 py-4 text-lg font-bold text-white shadow-xl shadow-blue-200 transition-all hover:bg-blue-700 hover:scale-105 active:scale-95"
             >
               Get Started
               <i className="bi bi-chevron-down group-hover:translate-y-1 transition-transform" />
-            </button>
-            <button
-              onClick={() => document.getElementById('about-us')?.scrollIntoView({ behavior: 'smooth' })}
-              className="rounded-2xl border border-slate-200 bg-white px-8 py-4 text-lg font-bold text-slate-600 transition-all hover:bg-slate-50 hover:border-slate-300"
-            >
-              Learn More
             </button>
           </div>
         </div>
@@ -124,81 +167,116 @@ export default function HomePage() {
             className="relative z-10 mx-auto w-full max-w-lg drop-shadow-2xl animate-float"
           />
         </div>
+      </section>
 
-        {/* Decorative dots */}
-        <div className="absolute left-10 top-10 flex gap-2">
-          <div className="h-3 w-3 rounded-full bg-blue-200" />
-          <div className="h-3 w-3 rounded-full bg-emerald-200" />
-          <div className="h-3 w-3 rounded-full bg-pink-200" />
+      {/* --- STATUS TRACKER SECTION --- */}
+      <section className="relative -mt-16 mb-0 mx-auto max-w-4xl px-4 z-20">
+        <div className="rounded-[2.5rem] bg-white/70 backdrop-blur-xl border border-white/50 p-8 md:p-10 shadow-2xl shadow-blue-500/10 transition-all duration-700 hover:shadow-blue-500/20">
+          <div className="flex flex-col md:flex-row items-center gap-10 md:gap-12">
+            <div className="flex-1 space-y-3 text-center md:text-left">
+              <h3 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Track Your Admission</h3>
+              <p className="text-sm font-semibold text-slate-500 max-w-sm mx-auto md:mx-0">Enter your registered mobile number to check your status instantly.</p>
+            </div>
+            <form onSubmit={onCheckStatus} className="w-full md:w-auto flex flex-col sm:flex-row items-stretch gap-4">
+              <div className="relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 group-focus-within:text-blue-500 transition-colors" />
+                <input
+                  type="tel"
+                  maxLength={10}
+                  placeholder="10-digit Mobile Number"
+                  value={statusSearch}
+                  onChange={(e) => setStatusSearch(e.target.value.replace(/\D/g, ''))}
+                  className="w-full sm:w-72 rounded-2xl border border-slate-200 bg-white/50 pl-12 pr-6 py-4.5 text-lg font-bold outline-none focus:bg-white focus:border-blue-500 focus:ring-8 focus:ring-blue-500/5 transition-all shadow-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={statusLoading}
+                className="rounded-2xl bg-blue-600 px-8 py-4.5 text-lg font-black text-white shadow-xl shadow-blue-500/20 transition-all hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              >
+                {statusLoading ? 'Checking...' : 'Check Status'}
+              </button>
+            </form>
+          </div>
+
+          {statusError && (
+            <div className="mt-8 rounded-2xl bg-red-50 p-4 text-red-600 text-sm font-bold flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+              <XCircle size={18} />
+              {statusError}
+            </div>
+          )}
+
+          {statusResult && (
+            <div className="mt-10 flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-3xl bg-blue-50/50 border border-blue-100 animate-in zoom-in-95 duration-500">
+              <div className="space-y-1 text-center sm:text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Registration for</p>
+                <h4 className="text-xl font-black text-slate-900">{statusResult.courseSelected}</h4>
+                <p className="text-xs font-bold text-slate-400">Student: {statusResult.fullName}</p>
+              </div>
+              <div className={`flex items-center gap-3 px-6 py-3 rounded-2xl shadow-sm ${statusResult.status === 'Confirmed' ? 'bg-emerald-500 text-white shadow-emerald-200' :
+                statusResult.status === 'Rejected' ? 'bg-red-500 text-white shadow-red-200' :
+                  'bg-amber-500 text-white shadow-amber-200 animate-pulse'
+                }`}>
+                {statusResult.status === 'Confirmed' ? <CheckCircle2 size={24} /> :
+                  statusResult.status === 'Rejected' ? <XCircle size={24} /> : <Clock size={24} />}
+                <span className="text-lg font-black uppercase tracking-tighter">{statusResult.status}</span>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* --- ABOUT US SECTION --- */}
-      <section id="about-us" className="space-y-16">
+      {/* --- WHY CHOOSE US SECTION --- */}
+      <section className="space-y-16 pt-24 md:pt-32">
         <div className="text-center">
           <div className="inline-block border-y-2 border-blue-500/20 px-8 py-2 text-sm font-black uppercase tracking-[0.3em] text-blue-600">
-            About Us
+            Academy Excellence
           </div>
-          <h2 className="mt-6 text-4xl font-extrabold text-slate-900 md:text-5xl">
-            NiKii Computer Academy
-          </h2>
+          <h2 className="mt-6 text-4xl font-extrabold text-slate-900 md:text-5xl">Why Choose NiKii Academy?</h2>
         </div>
 
-        <div className="grid gap-12 lg:grid-cols-2">
-          <div className="flex flex-col justify-center space-y-6 rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
-            <p className="text-lg font-medium leading-relaxed text-slate-600">
-              Welcome to <span className="font-bold text-blue-600">NiKii Computer Academy</span> at Anthiyur, your premier destination for innovative technology solutions and exceptional IT services. We are committed to delivering a comprehensive range of computer-related services and products tailored to meet the needs of individuals, businesses and rural communities.
-            </p>
-            <p className="text-lg font-medium leading-relaxed text-slate-600">
-              Our organization is dedicated to bridging the digital divide in Tamil Nadu by focusing on rural skill development, computer education, and communicative skill development.
-            </p>
-            <div className="space-y-4">
-              <h4 className="font-bold text-slate-900 uppercase tracking-wider text-sm">Our services include:</h4>
-              <ul className="grid gap-3 text-slate-500">
-                {[
-                  'Computer education for school and college students',
-                  'Specialized training programs',
-                  'N.G.O. projects',
-                  'Affordable education for rural students'
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3 font-medium italic">
-                    <i className="bi bi-check-circle-fill text-emerald-500" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-1">
-            {/* Vision */}
-            <div className="group rounded-3xl bg-blue-600 p-8 text-white shadow-xl transition-all hover:-translate-y-2">
-              <div className="flex items-start gap-6">
-                <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md">
-                  <i className="bi bi-eye-fill text-3xl" />
-                </div>
-                <div className="space-y-3">
-                  <h3 className="text-2xl font-bold">Vision</h3>
-                  <p className="text-blue-50/80 leading-relaxed font-medium">
-                    Our vision is to become the premier technology partner in our community, renowned for our exceptional service, innovative solutions and unwavering commitment to student satisfaction.
-                  </p>
-                </div>
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 px-4 overflow-visible">
+          {[
+            {
+              title: "Expert Mentors",
+              desc: "Learn from professionals with years of real-world industry experience.",
+              icon: <Award className="text-blue-600" size={32} />,
+              color: "blue"
+            },
+            {
+              title: "100% Practical",
+              desc: "We focus on hands-on project based learning approach.",
+              icon: <Target className="text-emerald-500" size={32} />,
+              color: "emerald"
+            },
+            {
+              title: "Modern Lab",
+              desc: "Well-equipped computer labs with latest software and high-speed internet.",
+              icon: <Zap className="text-amber-500" size={32} />,
+              color: "amber"
+            },
+            {
+              title: "Authorized Center",
+              desc: "State and Central government recognized certification for your career.",
+              icon: <ShieldCheck className="text-purple-500" size={32} />,
+              color: "purple"
+            }
+          ].map((item, idx) => (
+            <div
+              key={idx}
+              className="group relative rounded-[2.5rem] bg-white/40 backdrop-blur-md border border-white/60 p-10 text-center shadow-lg transition-all duration-500 hover:-translate-y-4 hover:bg-white/80 hover:shadow-2xl hover:shadow-slate-200"
+            >
+              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-inner transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6">
+                {item.icon}
               </div>
+              <h3 className="mb-3 text-xl font-bold text-slate-900">{item.title}</h3>
+              <p className="text-sm font-medium leading-relaxed text-slate-500">{item.desc}</p>
+              <div className={`absolute -inset-2 -z-10 rounded-[3rem] opacity-0 transition-opacity duration-500 group-hover:opacity-100 bg-gradient-to-br ${item.color === 'blue' ? 'from-blue-500/10 to-transparent' :
+                item.color === 'emerald' ? 'from-emerald-500/10 to-transparent' :
+                  item.color === 'amber' ? 'from-amber-500/10 to-transparent' : 'from-purple-500/10 to-transparent'
+                }`} />
             </div>
-            {/* Mission */}
-            <div className="group rounded-3xl bg-emerald-500 p-8 text-white shadow-xl transition-all hover:-translate-y-2">
-              <div className="flex items-start gap-6">
-                <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md">
-                  <i className="bi bi-bullseye text-3xl" />
-                </div>
-                <div className="space-y-3">
-                  <h3 className="text-2xl font-bold">Mission</h3>
-                  <p className="text-emerald-50/80 leading-relaxed font-medium">
-                    Our mission is to empower students with reliable, efficient and innovative technology solutions, bridging the gap between technology and education.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </section>
 
@@ -210,7 +288,7 @@ export default function HomePage() {
           </div>
           <h2 className="mt-6 text-4xl font-extrabold text-slate-900 md:text-5xl">Explore Specialized Courses</h2>
           <p className="mx-auto mt-4 max-w-2xl text-lg font-medium text-slate-500">
-            Master the most in-demand technical skills with our ISO certified curriculum and expert guidance.
+            Master the most in-demand technical skills with our State and Central certified curriculum and expert guidance.
           </p>
         </div>
 
@@ -220,77 +298,73 @@ export default function HomePage() {
               .sort((a, b) => (b.isPromoted ? 1 : 0) - (a.isPromoted ? 1 : 0))
               .filter(c => c.isActive)
               .map((course, i) => (
-              <div 
-                key={i} 
-                className={`group relative overflow-hidden rounded-[1.5rem] md:rounded-[2.5rem] p-6 md:p-8 bg-white shadow-sm border transition-all duration-500 hover:-translate-y-3 hover:shadow-2xl ${
-                  course.isPromoted 
-                    ? 'border-amber-200 ring-4 ring-amber-500/10 hover:shadow-amber-200/50 lg:col-span-3 md:col-span-2' 
+                <div
+                  key={i}
+                  className={`group relative overflow-hidden rounded-[1.5rem] md:rounded-[2.5rem] p-6 md:p-8 bg-white shadow-sm border transition-all duration-500 hover:-translate-y-3 hover:shadow-2xl ${course.isPromoted
+                    ? 'border-amber-200 ring-4 ring-amber-500/10 hover:shadow-amber-200/50 lg:col-span-3 md:col-span-2'
                     : 'border-slate-100 hover:shadow-blue-200/50'
-                }`}
-              >
-                <div className={`flex flex-col ${course.isPromoted ? 'md:flex-row md:items-center md:gap-10' : ''}`}>
-                  <div className={`shrink-0 mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${course.color} text-white shadow-lg overflow-hidden ${course.isPromoted ? 'md:mb-0 md:h-24 md:w-24' : ''}`}>
-                    {course.imageUrl ? (
-                      <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
-                    ) : (
-                      <i className={`bi ${course.icon} ${course.isPromoted ? 'text-5xl' : 'text-3xl'}`} />
-                    )}
-                  </div>
-                  
-                  <div className="flex-1">
-                    <div className="absolute right-8 top-8 flex flex-col items-end gap-2">
-                      <div className="rounded-full bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-tighter text-slate-400">
-                        {course.duration}
-                      </div>
-                      {course.isPromoted && course.badgeText && (
-                        <div className="animate-pulse rounded-full bg-amber-500 px-3 py-1 text-[10px] font-black uppercase tracking-tighter text-white shadow-md">
-                          {course.badgeText}
-                        </div>
+                    }`}
+                >
+                  <div className={`flex flex-col ${course.isPromoted ? 'md:flex-row md:items-center md:gap-10' : ''}`}>
+                    <div className={`shrink-0 mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${course.color} text-white shadow-lg overflow-hidden ${course.isPromoted ? 'md:mb-0 md:h-24 md:w-24' : ''}`}>
+                      {course.imageUrl ? (
+                        <img src={course.imageUrl} alt={course.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <i className={`bi ${course.icon} ${course.isPromoted ? 'text-5xl' : 'text-3xl'}`} />
                       )}
                     </div>
 
-                    <h3 className={`mb-3 font-black leading-tight text-slate-900 ${course.isPromoted ? 'text-3xl' : 'text-xl'}`}>{course.title}</h3>
-                    <p className={`mb-6 font-medium leading-relaxed text-slate-500 ${course.isPromoted ? 'text-lg max-w-2xl' : 'text-sm'}`}>{course.description}</p>
-                    
-                    <div className="flex flex-wrap gap-2">
-                      {(course.features || []).map((f, j) => (
-                        <span key={j} className={`rounded-lg bg-blue-50 px-3 py-1 font-bold text-blue-600 ${course.isPromoted ? 'text-xs' : 'text-[10px]'}`}>
-                          {f}
-                        </span>
-                      ))}
+                    <div className="flex-1">
+                      <div className="absolute right-8 top-8 flex flex-col items-end gap-2">
+                        <div className="rounded-full bg-slate-50 px-3 py-1 text-[10px] font-black uppercase tracking-tighter text-slate-400">
+                          {course.duration}
+                        </div>
+                        {course.isPromoted && course.badgeText && (
+                          <div className="animate-pulse rounded-full bg-amber-500 px-3 py-1 text-[10px] font-black uppercase tracking-tighter text-white shadow-md">
+                            {course.badgeText}
+                          </div>
+                        )}
+                      </div>
+
+                      <h3 className={`mb-3 font-black leading-tight text-slate-900 ${course.isPromoted ? 'text-3xl' : 'text-xl'}`}>{course.title}</h3>
+                      <p className={`mb-6 font-medium leading-relaxed text-slate-500 ${course.isPromoted ? 'text-lg max-w-2xl' : 'text-sm'}`}>{course.description}</p>
+
+                      <div className="flex flex-wrap gap-2">
+                        {(course.features || []).map((f, j) => (
+                          <span key={j} className={`rounded-lg bg-blue-50 px-3 py-1 font-bold text-blue-600 ${course.isPromoted ? 'text-xs' : 'text-[10px]'}`}>
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className={`${course.isPromoted ? 'md:w-64 shrink-0' : ''}`}>
+                      <button
+                        onClick={() => {
+                          form.setValue('courseSelected', course.title);
+                          document.getElementById('registration-form')?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className={`mt-8 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-sm font-bold transition-all ${course.isPromoted
+                          ? 'bg-amber-500 text-white hover:bg-amber-600 md:mt-0 shadow-lg shadow-amber-200'
+                          : 'bg-slate-50 text-slate-600 group-hover:bg-blue-600 group-hover:text-white'
+                          }`}
+                      >
+                        Register Now
+                        <ArrowRight size={18} />
+                      </button>
                     </div>
                   </div>
 
-                  <div className={`${course.isPromoted ? 'md:w-64 shrink-0' : ''}`}>
-                    <button 
-                      onClick={() => {
-                        form.setValue('courseSelected', course.title);
-                        document.getElementById('registration-form')?.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className={`mt-8 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-sm font-bold transition-all ${
-                        course.isPromoted 
-                          ? 'bg-amber-500 text-white hover:bg-amber-600 md:mt-0 shadow-lg shadow-amber-200' 
-                          : 'bg-slate-50 text-slate-600 group-hover:bg-blue-600 group-hover:text-white'
-                      }`}
-                    >
-                      Register Now
-                      <i className="bi bi-arrow-right" />
-                    </button>
-                  </div>
+                  <div className={`absolute -bottom-2 -right-2 h-16 w-16 rounded-full blur-3xl transition-all ${course.isPromoted ? 'bg-amber-500/10 group-hover:bg-amber-500/30' : 'bg-blue-500/5 group-hover:bg-blue-500/20'
+                    }`} />
                 </div>
-                
-                <div className={`absolute -bottom-2 -right-2 h-16 w-16 rounded-full blur-3xl transition-all ${
-                  course.isPromoted ? 'bg-amber-500/10 group-hover:bg-amber-500/30' : 'bg-blue-500/5 group-hover:bg-blue-500/20'
-                }`} />
-              </div>
-            ))
+              ))
           ) : (
-            <div className="col-span-full py-20 text-center">
-              <div className="animate-spin inline-block w-8 h-8 border-[3px] border-current border-t-transparent text-blue-600 rounded-full" role="status" aria-label="loading">
-                <span className="sr-only">Loading...</span>
-              </div>
-              <p className="mt-4 text-slate-400 font-medium italic">Synchronizing course catalog...</p>
-            </div>
+            <>
+              <CourseSkeleton />
+              <CourseSkeleton />
+              <CourseSkeleton />
+            </>
           )}
         </div>
       </section>
@@ -326,7 +400,7 @@ export default function HomePage() {
                     New Registration
                   </button>
                   <div className="pt-4">
-                    <a 
+                    <a
                       href="https://wa.me/918015599681?text=Hi, I just registered on your website and would like to know more about the next steps."
                       target="_blank"
                       rel="noreferrer"
@@ -351,10 +425,13 @@ export default function HomePage() {
                     {form.watch('courseSelected') && (
                       <div className="rounded-3xl bg-blue-50/50 border border-blue-100 p-8 flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
                         <div className="space-y-2 text-center md:text-left">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Selected Program</p>
-                          <h4 className="text-3xl font-black text-slate-900">{form.watch('courseSelected')}</h4>
+                          <div className="flex items-center gap-2 rounded-full bg-blue-50 px-4 py-2 text-blue-600 border border-blue-100 shadow-sm animate-in fade-in slide-in-from-left duration-700 delay-100">
+                            <span className="flex h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">State and Central Certified Academy</span>
+                          </div>
+                          <h4 className="text-xl font-black text-slate-900">{form.watch('courseSelected')}</h4>
                         </div>
-                        <button 
+                        <button
                           type="button"
                           onClick={() => document.getElementById('courses')?.scrollIntoView({ behavior: 'smooth' })}
                           className="px-6 py-2 rounded-xl bg-white border border-blue-200 text-blue-600 font-bold text-sm hover:bg-blue-600 hover:text-white transition-all shadow-sm"
@@ -369,7 +446,7 @@ export default function HomePage() {
                       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white text-lg">1</span>
                       Student Identity
                     </h3>
- 
+
                     <div className="grid gap-8 md:grid-cols-2">
                       <div className="space-y-3">
                         <label className="text-sm font-black uppercase tracking-widest text-slate-400">Student's Full Name *</label>
@@ -435,7 +512,6 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* ... (Remaining form parts same but with updated styling for consistency) ... */}
                   <div className="space-y-8">
                     <h3 className="text-2xl font-black text-slate-900 flex items-center gap-4">
                       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white text-lg">2</span>
@@ -464,7 +540,17 @@ export default function HomePage() {
                       </div>
                       <div className="space-y-3">
                         <label className="text-sm font-black uppercase tracking-widest text-slate-400">Mobile (WhatsApp) *</label>
-                        <input {...form.register('mobileNumber')} className="w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-6 py-4 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 outline-none transition font-medium text-lg" placeholder="+91 00000 00000" />
+                        <input
+                          type="tel"
+                          maxLength={10}
+                          {...form.register('mobileNumber')}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            form.setValue('mobileNumber', val);
+                          }}
+                          className="w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-6 py-4 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 outline-none transition font-medium text-lg"
+                          placeholder="10 digit mobile number"
+                        />
                       </div>
                     </div>
                   </div>
@@ -476,8 +562,8 @@ export default function HomePage() {
                     </h3>
                     <div className="space-y-4">
                       <label className="text-sm font-black uppercase tracking-widest text-slate-400">Promocode (Optional)</label>
-                      <input 
-                        {...form.register('promoCode')} 
+                      <input
+                        {...form.register('promoCode')}
                         placeholder="Ex: SUMMER50"
                         className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-4 text-lg font-medium outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition shadow-sm uppercase placeholder:normal-case"
                       />
@@ -519,7 +605,7 @@ export default function HomePage() {
                     </h3>
                     <div className="grid gap-6 md:grid-cols-2">
                       {[
-                        { id: 'Online Mode (10% Discount)', label: 'Online Payment', desc: 'Secure 10% Extra Discount on Fees', icon: 'bi-lightning-charge-fill' },
+                        { id: 'Online Mode', label: 'Online Payment', desc: 'Pay securely via UPI/Card/NetBanking', icon: 'bi-lightning-charge-fill' },
                         { id: 'Offline Mode', label: 'Offline Payment', desc: 'Pay Cash at the Academy Counter', icon: 'bi-cash' }
                       ].map((p) => (
                         <label key={p.id} className="flex flex-col gap-2 rounded-3xl border-2 border-slate-100 bg-slate-50/50 p-8 cursor-pointer hover:bg-white transition group has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/30">
@@ -572,7 +658,6 @@ export default function HomePage() {
         </div>
 
         <div className="space-y-16">
-          {/* Details Grid (Top) */}
           <div className="grid gap-6 md:grid-cols-3">
             {[
               {
@@ -612,26 +697,24 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Heading moved below contact details */}
           <div className="text-center">
             <h2 className="text-4xl font-extrabold text-slate-900 md:text-5xl">Visit Our Academy</h2>
           </div>
 
-          {/* Map Box (Full Width - Bottom) */}
           <div className="overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white p-3 shadow-xl h-[450px] md:h-[550px] group">
-            <iframe 
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3910.4554316975513!2d77.5897441!3d11.5751703!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3ba947005d2d6769%3A0xab7232af2f85f78c!2sNiKii%20Computer%20Academy!5e0!3m2!1sen!2sin!4v1710600000000!5m2!1sen!2sin" 
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3910.4554316975513!2d77.5897441!3d11.5751703!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3ba947005d2d6769%3A0xab7232af2f85f78c!2sNiKii%20Computer%20Academy!5e0!3m2!1sen!2sin!4v1710600000000!5m2!1sen!2sin"
               className="w-full h-full rounded-[2rem] border-none grayscale-[0.2] transition-all duration-700 group-hover:grayscale-0"
-              allowFullScreen={true} 
-              loading="lazy" 
+              allowFullScreen={true}
+              loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
             ></iframe>
           </div>
 
           <div className="flex justify-center">
-            <a 
-              href="https://www.google.com/maps/dir//HHGQ%2B3V9+NiKii+Computer+Academy,+Anthiyur,+Tamil+Nadu+638501/@11.5751703,77.5897441,17z" 
-              target="_blank" 
+            <a
+              href="https://www.google.com/maps/dir//HHGQ%2B3V9+NiKii+Computer+Academy,+Anthiyur,+Tamil+Nadu+638501/@11.5751703,77.5897441,17z"
+              target="_blank"
               rel="noreferrer"
               className="inline-flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-12 py-5 font-black text-white hover:bg-blue-600 transition-all shadow-2xl shadow-slate-200 hover:scale-105 active:scale-95"
             >
@@ -643,9 +726,9 @@ export default function HomePage() {
       </section>
 
       {/* --- FLOATING WHATSAPP BUTTON --- */}
-      <a 
-        href="https://wa.me/918015599681" 
-        target="_blank" 
+      <a
+        href="https://wa.me/918015599681"
+        target="_blank"
         rel="noreferrer"
         className="fixed bottom-10 right-10 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 text-white shadow-2xl transition hover:scale-110 active:scale-95"
       >
@@ -654,4 +737,3 @@ export default function HomePage() {
     </div>
   )
 }
-

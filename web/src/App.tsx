@@ -2,9 +2,38 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import HomePage from './pages/HomePage'
 import AdminPage from './pages/AdminPage'
+import CertificateViewPage from './pages/CertificateViewPage'
+import StudentLoginPage from './pages/StudentLoginPage'
+import StudentDashboardPage from './pages/StudentDashboardPage'
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [activeSection, setActiveSection] = useState('')
+
+  // Intersection Observer for scroll-spy
+  useEffect(() => {
+    const observerOptions = {
+      root: null,
+      rootMargin: '-20% 0px -70% 0px', // Trigger when section is in the upper middle
+      threshold: 0
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          setActiveSection(entry.target.id);
+        }
+      });
+    }, observerOptions);
+
+    const sections = ['home', 'courses', 'contact', 'registration-form'];
+    sections.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   // Close menu on navigation
   useEffect(() => {
@@ -12,19 +41,23 @@ function App() {
   }, [window.location.pathname])
 
   const navLinks = [
-    { name: 'Home', path: '/', isHash: false },
-    { name: 'About', path: 'about-us', isHash: true },
+    { name: 'Home', path: 'home', isHash: true },
     { name: 'Courses', path: 'courses', isHash: true },
     { name: 'Contact', path: 'contact', isHash: true },
+    { name: 'Student Portal', path: '/student/login', isHash: false },
   ]
 
   const handleNavClick = (link: { name: string, path: string, isHash: boolean }) => {
-    if (!link.isHash) return;
-    
+    if (!link.isHash) {
+      setActiveSection('');
+      return;
+    }
+
     if (window.location.pathname !== '/') {
       window.location.href = `/#${link.path}`;
     } else {
       document.getElementById(link.path)?.scrollIntoView({ behavior: 'smooth' });
+      setActiveSection(link.path);
     }
     setIsMenuOpen(false);
   }
@@ -35,10 +68,6 @@ function App() {
         <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
           <NavLink to="/" className="flex items-center gap-3">
             <img src="/Edu_Logo.png" alt="NikiiDigital Logo" className="h-10 w-auto transition-transform hover:scale-110" />
-            <div className="leading-tight">
-              <div className="text-sm font-black text-slate-900 tracking-tight">Nikii Digital</div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-blue-600">Academy</div>
-            </div>
           </NavLink>
 
           {/* Nav & Theme Toggle Container */}
@@ -50,7 +79,10 @@ function App() {
                   <button
                     key={link.name}
                     onClick={() => handleNavClick(link)}
-                    className="rounded-xl px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-all"
+                    className={`rounded-xl px-4 py-2 text-sm font-bold transition-all ${activeSection === link.path
+                        ? 'bg-blue-600/10 text-blue-600'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600'
+                      }`}
                   >
                     {link.name}
                   </button>
@@ -59,8 +91,7 @@ function App() {
                     key={link.name}
                     to={link.path}
                     className={({ isActive }) =>
-                      `rounded-xl px-4 py-2 text-sm font-bold transition-all ${
-                        isActive ? 'bg-blue-600/10 text-blue-600' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600'
+                      `rounded-xl px-4 py-2 text-sm font-bold transition-all ${isActive ? 'bg-blue-600/10 text-blue-600' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600'
                       }`
                     }
                   >
@@ -71,7 +102,7 @@ function App() {
             </nav>
 
             {/* Mobile Menu Button */}
-            <button 
+            <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 md:hidden text-slate-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
             >
@@ -89,18 +120,20 @@ function App() {
                   <button
                     key={link.name}
                     onClick={() => handleNavClick(link)}
-                    className="flex items-center justify-between rounded-2xl bg-slate-50 px-6 py-4 text-lg font-black text-slate-900 border border-slate-100 active:scale-[0.98] transition-all"
+                    className={`flex items-center justify-between rounded-2xl px-6 py-4 text-lg font-black active:scale-[0.98] transition-all ${activeSection === link.path
+                        ? 'bg-blue-600 text-white shadow-xl shadow-blue-200'
+                        : 'bg-slate-50 text-slate-900 border border-slate-100'
+                      }`}
                   >
                     {link.name}
-                    <i className="bi bi-chevron-right text-slate-300" />
+                    <i className={`bi bi-chevron-right ${activeSection === link.path ? 'text-white/50' : 'text-slate-300'}`} />
                   </button>
                 ) : (
                   <NavLink
                     key={link.name}
                     to={link.path}
                     className={({ isActive }) =>
-                      `flex items-center justify-between rounded-2xl px-6 py-4 text-lg font-black active:scale-[0.98] transition-all ${
-                        isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' : 'bg-slate-50 text-slate-900 border border-slate-100'
+                      `flex items-center justify-between rounded-2xl px-6 py-4 text-lg font-black active:scale-[0.98] transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' : 'bg-slate-50 text-slate-900 border border-slate-100'
                       }`
                     }
                   >
@@ -122,13 +155,16 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/nikii-secure-admin-portal" element={<AdminPage />} />
+          <Route path="/certificate/:id" element={<CertificateViewPage />} />
+          <Route path="/student/login" element={<StudentLoginPage />} />
+          <Route path="/student/dashboard" element={<StudentDashboardPage />} />
           <Route
             path="*"
             element={
               <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
                 <div className="text-xl font-bold text-slate-900">Page not found</div>
                 <div className="mt-2 text-slate-500">
-                  Try going back to the form page.
+                  Try going back to the home page or logging in as a student.
                 </div>
               </div>
             }
