@@ -338,7 +338,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    <div className={`${course.isPromoted ? 'md:w-64 shrink-0' : ''}`}>
+                    <div className={`${course.isPromoted ? 'md:w-64 shrink-0' : ''} flex justify-center`}>
                       <button
                         onClick={() => {
                           form.setValue('courseSelected', course.title);
@@ -652,7 +652,7 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  <div className="pt-4">
+                  <div className="pt-4 flex justify-center">
                     <button
                       type="submit"
                       disabled={form.formState.isSubmitting}
