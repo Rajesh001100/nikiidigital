@@ -258,14 +258,12 @@ function App() {
       <footer className="border-t border-slate-100 bg-white py-5">
         {/* Mobile: stacked center | Desktop: 3 columns */}
         <div className="flex flex-col items-center gap-2 px-6 text-xs text-slate-400 font-medium sm:grid sm:grid-cols-3 sm:gap-0">
-          <div className="text-center sm:text-left flex flex-wrap gap-3">
+          <div className="text-center sm:text-left">
             <span onClick={() => navigate('/privacy-policy')} className="hover:text-blue-600 cursor-pointer transition-colors">Privacy Policy</span>
-            <span onClick={() => navigate('/terms-of-service')} className="hover:text-blue-600 cursor-pointer transition-colors">Terms of Service</span>
           </div>
           <div className="text-center order-first sm:order-none">© {new Date().getFullYear()} NiKii Computer Academy. All rights reserved.</div>
-          <div className="text-center sm:text-right flex flex-wrap gap-3 justify-center sm:justify-end">
-            <span onClick={() => navigate('/nikii-staff-portal')} className="hover:text-emerald-600 cursor-pointer font-bold transition-colors">Staff Portal</span>
-            <span onClick={() => navigate('/nikii-secure-admin-portal')} className="hover:text-blue-600 cursor-pointer font-bold transition-colors">Admin Gateway</span>
+          <div className="text-center sm:text-right">
+            <span onClick={() => navigate('/terms-of-service')} className="hover:text-blue-600 cursor-pointer transition-colors">Terms of Service</span>
           </div>
         </div>
       </footer>

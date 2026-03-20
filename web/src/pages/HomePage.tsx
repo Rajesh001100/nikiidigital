@@ -344,8 +344,8 @@ export default function HomePage() {
                           form.setValue('courseSelected', course.title);
                           document.getElementById('registration-form')?.scrollIntoView({ behavior: 'smooth' });
                         }}
-                        className={`mt-8 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-sm font-bold transition-all ${course.isPromoted
-                          ? 'bg-amber-500 text-white hover:bg-amber-600 md:mt-0 shadow-lg shadow-amber-200'
+                        className={`mt-6 flex w-fit mx-auto items-center justify-center gap-2 rounded-xl px-8 py-2.5 text-sm font-bold transition-all ${course.isPromoted
+                          ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-200'
                           : 'bg-slate-50 text-slate-600 group-hover:bg-blue-600 group-hover:text-white'
                           }`}
                       >
@@ -395,7 +395,7 @@ export default function HomePage() {
                   </p>
                   <button
                     onClick={() => { setSuccessId(null); window.scrollTo({ top: document.getElementById('registration-form')?.offsetTop ? document.getElementById('registration-form')!.offsetTop - 100 : 0, behavior: 'smooth' }); }}
-                    className="mt-8 rounded-2xl bg-blue-600 px-10 py-4 text-lg font-bold text-white hover:bg-blue-700 transition shadow-2xl shadow-blue-200"
+                    className="mt-8 rounded-2xl bg-blue-600 px-8 py-3 text-base font-bold text-white hover:bg-blue-700 transition shadow-2xl shadow-blue-200"
                   >
                     New Registration
                   </button>
@@ -656,7 +656,7 @@ export default function HomePage() {
                     <button
                       type="submit"
                       disabled={form.formState.isSubmitting}
-                      className="group relative w-full overflow-hidden rounded-xl bg-slate-900 px-5 py-3 text-base font-black text-white transition-all hover:bg-blue-600 hover:shadow-[0_10px_30px_rgba(37,99,235,0.2)] disabled:opacity-70 active:scale-[0.98]"
+                      className="group relative w-fit mx-auto overflow-hidden rounded-xl bg-slate-900 px-10 py-2.5 text-sm font-black text-white transition-all hover:bg-blue-600 hover:shadow-[0_10px_30px_rgba(37,99,235,0.2)] disabled:opacity-70 active:scale-[0.98]"
                     >
                       <span className="relative z-10 flex items-center justify-center gap-3">
                         {form.formState.isSubmitting ? 'Submitting...' : 'Register as Student'}
