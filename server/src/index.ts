@@ -18,8 +18,8 @@ import { supabase } from "./db.js";
 const PORT = process.env.PORT || "5188";
 console.log(`Server: Loading env from ${envPath}. Using port ${PORT}`);
 
-const ADMIN_KEY = process.env.ADMIN_KEY ?? "nikiidigital-admin";
-const STAFF_KEY = process.env.STAFF_KEY ?? "nikiidigital-staff";
+const ADMIN_KEY = (process.env.ADMIN_KEY ?? "nikiidigital-admin").trim();
+const STAFF_KEY = (process.env.STAFF_KEY ?? "nikiidigital-staff").trim();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
