@@ -224,7 +224,7 @@ export default function StaffPage() {
         <div className="overflow-x-auto w-full md:w-auto -mx-1 px-1">
           <div className="flex gap-1 md:gap-3 rounded-2xl bg-white p-1.5 shadow-sm border border-slate-100 w-max md:w-auto">
             {([
-              { id: 'students', label: 'Students', icon: Users },
+              { id: 'students', label: 'Registrations', icon: Users },
               { id: 'attendance', label: 'Attendance', icon: CheckCircle2 },
               { id: 'payments', label: 'Payments', icon: Send },
             ] as { id: Tab; label: string; icon: any }[]).map(tab => (
