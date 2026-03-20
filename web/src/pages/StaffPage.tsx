@@ -288,7 +288,7 @@ export default function StaffPage() {
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-slate-400">ID</th>
-                  <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-slate-400">Student</th>
+                  <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-slate-400">Student Name</th>
                   <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-slate-400">Course</th>
                   <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-slate-400">Batch</th>
                   <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-slate-400">Mobile</th>
