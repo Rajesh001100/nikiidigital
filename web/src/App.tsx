@@ -16,6 +16,7 @@ function App() {
   const isStaffPage = location.pathname.startsWith('/nikii-staff-portal')
   const isPortalPage = isAdminPage || isStaffPage
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isPortalDropdownOpen, setIsPortalDropdownOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('')
 
   // Intersection Observer for scroll-spy
@@ -52,7 +53,12 @@ function App() {
     { name: 'Home', path: 'home', isHash: true },
     { name: 'Courses', path: 'courses', isHash: true },
     { name: 'Contact', path: 'contact', isHash: true },
-    { name: 'Student Portal', path: '/student/login', isHash: false },
+    { name: 'Student Login', path: '/student/login', isHash: false },
+  ]
+
+  const portalLinks = [
+    { name: 'Admin', path: '/nikii-secure-admin-portal' },
+    { name: 'Staff', path: '/nikii-staff-portal' },
   ]
 
   const handleNavClick = (link: { name: string, path: string, isHash: boolean }) => {
@@ -121,6 +127,38 @@ function App() {
                       </NavLink>
                     )
                   ))}
+
+                  {/* Portal Dropdown */}
+                  <div 
+                    className="relative group ml-1"
+                    onMouseEnter={() => setIsPortalDropdownOpen(true)}
+                    onMouseLeave={() => setIsPortalDropdownOpen(false)}
+                  >
+                    <button
+                      className={`rounded-xl px-4 py-2 text-sm font-bold transition-all flex items-center gap-1 ${isPortalDropdownOpen ? 'bg-blue-600/10 text-blue-600' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600'}`}
+                    >
+                      Portal
+                      <i className={`bi bi-chevron-down text-[10px] transition-transform duration-300 ${isPortalDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {isPortalDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-1 w-48 rounded-2xl border border-slate-100 bg-white p-2 shadow-2xl shadow-blue-900/10 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {portalLinks.map((link) => (
+                           <button
+                             key={link.name}
+                             onClick={() => {
+                               navigate(link.path);
+                               setIsPortalDropdownOpen(false);
+                             }}
+                             className="flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-all text-left"
+                           >
+                             {link.name}
+                             <i className="bi bi-arrow-right text-xs opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+                           </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </nav>
 
                 {/* Mobile Menu Button */}
@@ -170,6 +208,24 @@ function App() {
                   </NavLink>
                 )
               ))}
+
+              {/* Mobile Portal Links */}
+              <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                <p className="px-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Internal Portals</p>
+                {portalLinks.map((link) => (
+                  <button
+                    key={link.name}
+                    onClick={() => {
+                        navigate(link.path);
+                        setIsMenuOpen(false);
+                    }}
+                    className="flex w-full items-center justify-between rounded-2xl bg-white border border-slate-100 px-6 py-4 text-lg font-black text-slate-900 hover:border-blue-600 active:scale-[0.98] transition-all"
+                  >
+                    {link.name}
+                    <i className="bi bi-shield-lock text-slate-300" />
+                  </button>
+                ))}
+              </div>
             </nav>
           </div>
         )}
