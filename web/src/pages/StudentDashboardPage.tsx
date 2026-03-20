@@ -50,8 +50,8 @@ export default function StudentDashboardPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
-                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
         )
     }
@@ -66,17 +66,17 @@ export default function StudentDashboardPage() {
     const isSettled = balance === 0;
 
     return (
-        <div className="min-h-screen bg-[#0a0a0c] text-white pt-24 pb-12 px-4 md:px-8">
+        <div className="min-h-screen bg-slate-50 text-slate-900 pt-24 pb-12 px-4 md:px-8">
             {/* Dashboard Header */}
             <div className="max-w-7xl mx-auto mb-10">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 glass-morphism p-6 md:p-8 rounded-3xl border border-white/10 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50">
                     <div className="flex items-center gap-5">
                         <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center border border-blue-500/30">
                             <span className="text-2xl font-bold text-blue-400">{student.fullName.charAt(0)}</span>
                         </div>
                         <div>
-                            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Welcome, {student.fullName}</h1>
-                            <div className="flex items-center gap-3 text-gray-400 text-sm">
+                            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-1">Welcome, {student.fullName}</h1>
+                            <div className="flex items-center gap-3 text-slate-500 text-sm">
                                 <span className="flex items-center gap-1.5"><BookOpen className="w-4 h-4" /> {student.courseSelected}</span>
                                 <span className="w-1 h-1 bg-gray-600 rounded-full" />
                                 <span>ID: #REG-{student.id.toString().padStart(4, '0')}</span>
@@ -85,7 +85,7 @@ export default function StudentDashboardPage() {
                     </div>
                     <button
                         onClick={handleLogout}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-red-500/10 text-gray-400 hover:text-red-400 border border-white/10 hover:border-red-500/20 rounded-xl transition-all font-medium"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-xl transition-all font-bold"
                     >
                         <LogOut className="w-4 h-4" /> Logout
                     </button>
@@ -106,8 +106,8 @@ export default function StudentDashboardPage() {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
                             className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all border text-sm whitespace-nowrap ${activeTab === tab.id
-                                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 shadow-lg shadow-blue-500/5'
-                                    : 'bg-transparent border-transparent text-gray-400 hover:bg-white/5 hover:text-gray-300'
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200'
+                                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                                 }`}
                         >
                             <tab.icon className="w-4 h-4" />
@@ -127,8 +127,8 @@ export default function StudentDashboardPage() {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
                             className={`w-full flex items-center gap-3 px-5 py-4 rounded-2xl transition-all border ${activeTab === tab.id
-                                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 shadow-lg shadow-blue-500/5'
-                                    : 'bg-transparent border-transparent text-gray-400 hover:bg-white/5 hover:text-gray-300'
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200'
+                                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                                 }`}
                         >
                             <tab.icon className="w-5 h-5" />
@@ -144,70 +144,70 @@ export default function StudentDashboardPage() {
                         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                             {/* Quick Stats Grid */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                <div className="glass-morphism p-6 rounded-3xl border border-white/10 relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                        <TrendingUp className="w-24 h-24" />
+                                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
+                                        <TrendingUp className="w-24 h-24" strokeWidth={1} />
                                     </div>
-                                    <p className="text-gray-400 mb-2 font-medium">Attendance Progress</p>
+                                    <p className="text-slate-500 mb-2 font-bold uppercase tracking-widest text-[10px]">Attendance Progress</p>
                                     <div className="flex items-end justify-between">
                                         <div>
-                                            <h3 className="text-4xl font-bold text-white mb-2">{attendancePercent}%</h3>
+                                            <h3 className="text-4xl font-black text-slate-900 mb-2">{attendancePercent}%</h3>
                                             <p className="text-sm text-blue-400">{attendance.filter(a => a.status === 'Present').length} days present</p>
                                         </div>
                                     </div>
-                                    <div className="mt-6 h-2 bg-white/5 rounded-full overflow-hidden">
+                                    <div className="mt-6 h-2.5 bg-slate-100 rounded-full overflow-hidden">
                                         <div className="h-full bg-blue-500 rounded-full" style={{ width: `${attendancePercent}%` }} />
                                     </div>
                                 </div>
 
                                 <div className="glass-morphism p-6 rounded-3xl border border-white/10 relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                        <CreditCard className="w-24 h-24" />
+                                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
+                                        <CreditCard className="w-24 h-24" strokeWidth={1} />
                                     </div>
                                     <div className="flex items-center justify-between mb-4 relative z-10">
-                                        <p className="text-gray-400 font-medium">Fee Summary</p>
+                                        <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Fee Summary</p>
                                         <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border ${isSettled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
                                             {isSettled ? 'Settled' : 'Pending'}
                                         </span>
                                     </div>
                                     <div className="space-y-3 relative z-10">
-                                        <div className="flex justify-between items-center bg-white/5 p-2 rounded-xl">
-                                            <span className="text-sm text-gray-400">Total Fee</span>
-                                            <span className="font-bold">₹{netFee}</span>
+                                        <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Fee</span>
+                                            <span className="font-black text-slate-700">₹{netFee}</span>
                                         </div>
-                                        <div className="flex justify-between items-center bg-emerald-500/10 p-2 rounded-xl">
-                                            <span className="text-sm text-emerald-400">Total Paid</span>
-                                            <span className="font-bold text-emerald-400">₹{totalPaid}</span>
+                                        <div className="flex justify-between items-center bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
+                                            <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Total Paid</span>
+                                            <span className="font-black text-emerald-600">₹{totalPaid}</span>
                                         </div>
-                                        <div className="flex justify-between items-center bg-blue-500/10 p-2 rounded-xl border border-blue-500/20">
-                                            <span className="text-sm text-blue-400 font-medium tracking-wide">Balance</span>
-                                            <span className="text-xl font-black text-blue-400">₹{balance}</span>
+                                        <div className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
+                                            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider tracking-widest">Balance</span>
+                                            <span className="text-2xl font-black text-blue-600">₹{balance}</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Recent Transactions */}
-                            <div className="glass-morphism p-6 rounded-3xl border border-white/10 relative overflow-hidden">
-                                <h3 className="font-bold text-lg mb-4 flex items-center justify-between">
+                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
+                                <h3 className="font-black text-slate-900 text-lg mb-4 flex items-center justify-between">
                                     <span>Recent Transactions</span>
-                                    <button onClick={() => setActiveTab('payments')} className="text-xs text-blue-400 hover:text-blue-300 font-medium">View All</button>
+                                    <button onClick={() => setActiveTab('payments')} className="text-xs text-blue-600 hover:text-blue-700 font-bold uppercase tracking-wider">View All</button>
                                 </h3>
                                 {payments.length > 0 ? (
                                     <div className="space-y-3">
                                         {payments.slice(0, 3).map((p, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors border border-white/5">
+                                            <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl hover:bg-white hover:shadow-sm transition-all border border-slate-100">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="p-2.5 bg-green-500/10 rounded-xl">
-                                                        <CreditCard className="w-5 h-5 text-green-400" />
+                                                    <div className="p-2.5 bg-emerald-50 rounded-xl">
+                                                        <CreditCard className="w-5 h-5 text-emerald-600" />
                                                     </div>
                                                     <div>
-                                                        <p className="text-sm text-gray-400 font-medium">{new Date(p.date).toLocaleDateString()}</p>
+                                                        <p className="text-sm text-slate-500 font-bold">{new Date(p.date).toLocaleDateString()}</p>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <span className="text-lg font-black text-white">₹{p.amount_paid}</span>
-                                                    <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mt-0.5"><CheckCircle2 className="w-3 h-3 inline mr-1" />Verified</p>
+                                                    <span className="text-lg font-black text-slate-900">₹{p.amount_paid}</span>
+                                                    <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mt-0.5"><CheckCircle2 className="w-3 h-3 inline mr-1" />Verified</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -220,11 +220,11 @@ export default function StudentDashboardPage() {
                             </div>
 
                             {/* Status Message */}
-                            <div className="glass-morphism p-6 rounded-3xl border border-blue-500/20 bg-blue-500/5 flex items-start gap-4">
-                                <AlertCircle className="w-6 h-6 text-blue-400 shrink-0 mt-0.5" />
+                            <div className="bg-blue-600 p-6 rounded-3xl border border-blue-700 shadow-lg shadow-blue-200 flex items-start gap-4">
+                                <AlertCircle className="w-6 h-6 text-white shrink-0 mt-0.5" />
                                 <div>
-                                    <h4 className="text-blue-400 font-bold mb-1">Academy Notice</h4>
-                                    <p className="text-gray-300 text-sm leading-relaxed">
+                                    <h4 className="text-white font-black mb-1">Academy Notice</h4>
+                                    <p className="text-blue-50 text-sm font-medium leading-relaxed">
                                         Always maintain 80% attendance to be eligible for the final examination and certificate generation. Contact admin for any leave requests.
                                     </p>
                                 </div>
@@ -233,24 +233,24 @@ export default function StudentDashboardPage() {
                     )}
 
                     {activeTab === 'attendance' && (
-                        <div className="glass-morphism rounded-3xl border border-white/10 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="p-6 border-b border-white/10">
-                                <h3 className="text-xl font-bold">Attendance History</h3>
+                        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="p-6 border-b border-slate-100">
+                                <h3 className="text-xl font-black text-slate-900">Attendance History</h3>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full">
-                                    <thead className="bg-white/5">
+                                    <thead className="bg-slate-50">
                                         <tr>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Date</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Remarks</th>
+                                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                                            <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Remarks</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-white/5">
+                                    <tbody className="divide-y divide-slate-100">
                                         {attendance.length > 0 ? (
                                             attendance.map((entry, idx) => (
-                                                <tr key={idx} className="hover:bg-white/5 transition-colors">
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 font-medium">
+                                                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-bold">
                                                         {new Date(entry.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap">
@@ -275,26 +275,26 @@ export default function StudentDashboardPage() {
                     )}
 
                     {activeTab === 'payments' && (
-                        <div className="glass-morphism rounded-3xl border border-white/10 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="p-6 border-b border-white/10">
-                                <h3 className="text-xl font-bold">Fee Tracking</h3>
+                        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="p-6 border-b border-slate-100">
+                                <h3 className="text-xl font-black text-slate-900">Fee Tracking</h3>
                             </div>
                             <div className="p-6 space-y-6">
                                 {payments.length > 0 ? (
                                     <div className="space-y-4">
                                         {payments.map((p, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-5 bg-white/5 rounded-2xl border border-white/5">
+                                            <div key={idx} className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
                                                 <div className="flex items-center gap-4">
-                                                    <div className="p-3 bg-green-500/10 rounded-xl">
-                                                        <CreditCard className="w-6 h-6 text-green-400" />
+                                                    <div className="p-3 bg-emerald-50 rounded-xl">
+                                                        <CreditCard className="w-6 h-6 text-emerald-600" />
                                                     </div>
                                                     <div>
-                                                        <p className="text-sm text-gray-400 font-medium">{new Date(p.date).toLocaleDateString()}</p>
+                                                        <p className="text-sm text-slate-500 font-bold">{new Date(p.date).toLocaleDateString()}</p>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <span className="text-2xl font-bold text-white">₹{p.amount_paid}</span>
-                                                    <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Status: Verified</p>
+                                                    <span className="text-2xl font-black text-slate-900">₹{p.amount_paid}</span>
+                                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Status: Verified</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -314,30 +314,30 @@ export default function StudentDashboardPage() {
 
                             {/* --- Syllabus Card --- */}
                             {syllabusUrl ? (
-                                <div className="glass-morphism p-6 rounded-3xl border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between gap-4">
+                                <div className="bg-white p-6 rounded-3xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-4 shadow-sm">
                                     <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-emerald-500/10 rounded-2xl">
-                                            <FileText className="w-7 h-7 text-emerald-400" />
+                                        <div className="p-3 bg-white rounded-2xl border border-emerald-100 shadow-sm">
+                                            <FileText className="w-7 h-7 text-emerald-600" />
                                         </div>
                                         <div>
-                                            <h4 className="font-black text-white text-lg">Course Syllabus</h4>
-                                            <p className="text-sm text-emerald-400">Official course outline & curriculum</p>
+                                            <h4 className="font-black text-slate-900 text-lg">Course Syllabus</h4>
+                                            <p className="text-sm text-emerald-600 font-bold uppercase tracking-wider">Official Curriculum</p>
                                         </div>
                                     </div>
                                     <a
                                         href={syllabusUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-lg shadow-emerald-900/20 transition-all hover:scale-105"
+                                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl shadow-lg shadow-emerald-200 transition-all hover:scale-105"
                                     >
                                         <Download className="w-5 h-5" />
                                         Download
                                     </a>
                                 </div>
                             ) : (
-                                <div className="glass-morphism p-5 rounded-2xl border border-white/5 flex items-center gap-4 opacity-50">
-                                    <FileText className="w-5 h-5 text-gray-500" />
-                                    <p className="text-sm text-gray-500 italic">Syllabus not yet uploaded by your instructor.</p>
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center gap-4 opacity-70">
+                                    <FileText className="w-5 h-5 text-slate-400" />
+                                    <p className="text-sm text-slate-400 italic font-medium">Syllabus not yet uploaded by your instructor.</p>
                                 </div>
                             )}
 
@@ -347,22 +347,22 @@ export default function StudentDashboardPage() {
                                     <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-4">Study Materials</h4>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {materials.map((m, idx) => (
-                                            <div key={idx} className="glass-morphism p-6 rounded-3xl border border-white/10 group hover:border-blue-500/30 transition-all">
+                                            <div key={idx} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm group hover:border-blue-500 hover:shadow-md transition-all">
                                                 <div className="flex items-start justify-between mb-4">
-                                                    <div className="p-3 bg-blue-500/10 rounded-2xl">
-                                                        <FileText className="w-6 h-6 text-blue-400" />
+                                                    <div className="p-3 bg-blue-50 rounded-2xl">
+                                                        <FileText className="w-6 h-6 text-blue-600" />
                                                     </div>
                                                     <a
                                                         href={m.file_url}
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="p-2.5 bg-white/5 hover:bg-blue-600 text-gray-400 hover:text-white rounded-xl transition-all"
+                                                        className="p-2.5 bg-slate-50 hover:bg-blue-600 text-slate-400 hover:text-white rounded-xl transition-all"
                                                     >
                                                         <Download className="w-5 h-5" />
                                                     </a>
                                                 </div>
-                                                <h4 className="text-lg font-bold mb-2 group-hover:text-blue-400 transition-colors">{m.title}</h4>
-                                                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">{m.description || 'No description provided.'}</p>
+                                                <h4 className="text-lg font-black mb-2 text-slate-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight">{m.title}</h4>
+                                                <p className="text-sm text-slate-500 font-medium line-clamp-2 leading-relaxed">{m.description || 'No description provided.'}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -370,9 +370,12 @@ export default function StudentDashboardPage() {
                             )}
 
                             {materials.length === 0 && !syllabusUrl && (
-                                <div className="glass-morphism p-12 rounded-3xl border border-white/10 flex flex-col items-center justify-center text-gray-500">
-                                    <FileText className="w-12 h-12 mb-4 opacity-20" />
-                                    <p>Study materials will be uploaded soon by your instructor.</p>
+                                <div className="bg-white p-12 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-slate-400 text-center">
+                                    <div className="p-5 bg-slate-50 rounded-full mb-4">
+                                        <FileText className="w-12 h-12 opacity-30" />
+                                    </div>
+                                    <p className="font-bold text-slate-500">No study materials found.</p>
+                                    <p className="text-sm max-w-[250px] mt-1 italic">Materials will be uploaded soon by your instructor.</p>
                                 </div>
                             )}
                         </div>

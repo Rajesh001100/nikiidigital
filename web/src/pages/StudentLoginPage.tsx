@@ -101,7 +101,7 @@ export default function StudentLoginPage() {
                                 <Loader2 className="w-6 h-6 animate-spin" />
                             ) : (
                                 <>
-                                    <span className="tracking-tight">Access Dashboard</span>
+                                    <span className="tracking-tight">Login</span>
                                     <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform duration-200" />
                                 </>
                             )}
