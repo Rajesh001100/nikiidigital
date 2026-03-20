@@ -11,3 +11,6 @@ Thumbs.db
 *.db
 *.db-journal
 
+
+# Archives
+*.zip
