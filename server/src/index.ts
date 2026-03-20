@@ -19,6 +19,7 @@ const PORT = process.env.PORT || "5188";
 console.log(`Server: Loading env from ${envPath}. Using port ${PORT}`);
 
 const ADMIN_KEY = process.env.ADMIN_KEY ?? "nikiidigital-admin";
+const STAFF_KEY = process.env.STAFF_KEY ?? "nikiidigital-staff";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
@@ -98,6 +99,21 @@ app.use("/api/", globalLimiter);
 const verifyAdmin = (req: any, res: any, next: any) => {
   const adminKey = req.headers['x-admin-key'];
   if (adminKey === ADMIN_KEY) {
+    req.isAdmin = true;
+    next();
+  } else {
+    res.status(401).json({ error: "Unauthorized access detected." });
+  }
+};
+
+// Accepts admin OR staff key
+const verifyStaff = (req: any, res: any, next: any) => {
+  const key = req.headers['x-admin-key'];
+  if (key === ADMIN_KEY) {
+    req.isAdmin = true;
+    next();
+  } else if (key === STAFF_KEY) {
+    req.isAdmin = false;
     next();
   } else {
     res.status(401).json({ error: "Unauthorized access detected." });
@@ -187,7 +203,7 @@ app.get("/api/student/dashboard/:id", async (req, res) => {
     // Find the course_id matching the student's enrolled course title
     const { data: courseData } = await supabase
       .from('courses')
-      .select('id, syllabusUrl')
+      .select('id, syllabusUrl, totalFee')
       .ilike('title', regRes.data.courseSelected)
       .single();
 
@@ -213,7 +229,8 @@ app.get("/api/student/dashboard/:id", async (req, res) => {
       attendancePercent,
       payments: paymentsRes.data || [],
       materials: relevantMaterials,
-      syllabusUrl: courseData?.syllabusUrl || null
+      syllabusUrl: courseData?.syllabusUrl || null,
+      courseFee: courseData?.totalFee || 0
     });
   } catch (err) {
     res.status(500).json({ error: "Internal Server Error" });
@@ -294,7 +311,7 @@ const RegistrationInput = z.object({
 const PaymentInput = z.object({
   registration_id: z.number(),
   amount_paid: z.number().min(1),
-  payment_type: z.enum(['Full', 'Installment 1', 'Installment 2']),
+  payment_type: z.string().min(1),
   payment_method: z.enum(['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'DD']).default('Cash'),
   discount_amount: z.number().optional().nullable(),
   remarks: z.string().optional().nullable(),
@@ -439,7 +456,23 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
 
 // Admin routes restricted by verifyAdmin middleware
 
-app.get("/api/registrations", verifyAdmin, async (req: any, res: any) => {
+// DELETE ALL registrations (admin only — irreversible)
+app.delete("/api/registrations", verifyAdmin, async (req: any, res: any) => {
+  try {
+    // Delete related records first (FK constraints)
+    await supabase.from('payments').delete().neq('id', 0);
+    await supabase.from('attendance').delete().neq('id', 0);
+    const { error } = await supabase.from('registrations').delete().neq('id', 0);
+    if (error) throw error;
+    console.warn("⚠️ ALL registrations deleted by admin.");
+    res.json({ ok: true, message: "All registrations deleted." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.get("/api/registrations", verifyStaff, async (req: any, res: any) => {
   try {
     const { data, error } = await supabase
       .from('registrations')
@@ -447,6 +480,21 @@ app.get("/api/registrations", verifyAdmin, async (req: any, res: any) => {
       .order('createdAt', { ascending: false });
     if (error) throw error;
     res.json({ registrations: data });
+  } catch (err) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Hard-delete a single registration (admin only)
+app.delete("/api/registrations/:id", verifyAdmin, async (req: any, res: any) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+  try {
+    await supabase.from('payments').delete().eq('registration_id', id);
+    await supabase.from('attendance').delete().eq('registration_id', id);
+    const { error } = await supabase.from('registrations').delete().eq('id', id);
+    if (error) throw error;
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -708,7 +756,7 @@ app.post("/api/settings", verifyAdmin, async (req: any, res: any) => {
 });
 
 // --- Payments & Materials Management ---
-app.get("/api/admin/payments", verifyAdmin, async (req: any, res: any) => {
+app.get("/api/admin/payments", verifyStaff, async (req: any, res: any) => {
   try {
     const { data, error } = await supabase
       .from('payments')
@@ -741,8 +789,10 @@ app.get("/api/admin/payments", verifyAdmin, async (req: any, res: any) => {
   }
 });
 
-app.post("/api/admin/payments", verifyAdmin, async (req: any, res: any) => {
-  const parsed = PaymentInput.safeParse(req.body);
+app.post("/api/admin/payments", verifyStaff, async (req: any, res: any) => {
+  // Staff cannot apply discounts — strip discount_amount if not admin
+  const body = req.isAdmin ? req.body : { ...req.body, discount_amount: undefined };
+  const parsed = PaymentInput.safeParse(body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid payment data" });
   try {
     const { data, error } = await supabase
@@ -808,7 +858,7 @@ app.delete("/api/admin/materials/:id", verifyAdmin, async (req: any, res: any) =
 
 // --- Attendance Management ---
 
-app.get("/api/attendance", verifyAdmin, async (req: any, res: any) => {
+app.get("/api/attendance", verifyStaff, async (req: any, res: any) => {
   const { date, batchTime } = req.query;
 
   try {
@@ -825,7 +875,7 @@ app.get("/api/attendance", verifyAdmin, async (req: any, res: any) => {
   }
 });
 
-app.post("/api/attendance", verifyAdmin, async (req: any, res: any) => {
+app.post("/api/attendance", verifyStaff, async (req: any, res: any) => {
   const { date, records } = req.body; // records: [{ registrationId, status }]
 
   try {
@@ -907,6 +957,51 @@ app.get("/api/registrations.csv", verifyAdmin, async (req: any, res: any) => {
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", "attachment; filename=registrations.csv");
+    res.send(csv);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.get("/api/admin/payments.csv", verifyAdmin, async (req: any, res: any) => {
+  try {
+    const { data: rows, error } = await supabase
+      .from('payments')
+      .select('*, registrations(fullName, mobileNumber, preferredBatchTime, courseSelected)')
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+
+    const headers = [
+      "Student Name", "Mobile", "Batch", "Course", "Amount Paid", "Type", "Method", "Date", "Remarks"
+    ];
+
+    const escape = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      if (/[",\n]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+      return s;
+    };
+
+    const csvRows = (rows || []).map((r: any) => {
+      const reg = r.registrations || {};
+      return [
+        reg.fullName,
+        reg.mobileNumber,
+        reg.preferredBatchTime,
+        reg.courseSelected,
+        r.amount_paid,
+        r.payment_type,
+        r.payment_method,
+        r.date ? new Date(r.date).toLocaleDateString('en-IN') : "",
+        r.remarks
+      ].map(escape).join(",");
+    });
+
+    const csv = headers.join(",") + "\n" + csvRows.join("\n");
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=payments_report.csv");
     res.send(csv);
   } catch (err) {
     console.error(err);

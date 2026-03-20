@@ -43,7 +43,7 @@ export type Payment = {
   id: number
   registration_id: number
   amount_paid: number
-  payment_type: 'Full' | 'Installment 1' | 'Installment 2'
+  payment_type: string
   payment_method?: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'DD'
   discount_amount?: number
   date: string
@@ -66,7 +66,8 @@ export type StudentDashboardData = {
   attendancePercent: number
   payments: Payment[]
   materials: Material[]
-  syllabusUrl?: string
+  syllabusUrl: string | null
+  courseFee: number
 }
 
 export type AdminAnalytics = {

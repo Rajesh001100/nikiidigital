@@ -55,6 +55,20 @@ export async function getRegistrations(adminKey: string) {
   })
 }
 
+export async function deleteAllRegistrations(adminKey: string) {
+  return apiFetch<{ ok: true; message: string }>('/api/registrations', {
+    method: 'DELETE',
+    adminKey,
+  })
+}
+
+export async function deleteRegistration(adminKey: string, id: number) {
+  return apiFetch<{ ok: true }>(`/api/registrations/${id}`, {
+    method: 'DELETE',
+    adminKey,
+  })
+}
+
 export async function updateRegistrationStatus(adminKey: string, id: number, status: 'Pending' | 'Confirmed' | 'Rejected', discount_amount?: number) {
   return apiFetch<{ ok: true }>(`/api/registrations/${id}/status`, {
     method: 'PUT',
@@ -73,6 +87,10 @@ export async function updateRegistration(adminKey: string, id: number, data: Par
 
 export function registrationsCsvUrl() {
   return `${API_URL}/api/registrations.csv`
+}
+
+export function paymentsCsvUrl() {
+  return `${API_URL}/api/admin/payments.csv`
 }
 
 // --- Courses CMS API ---

@@ -58,7 +58,12 @@ export default function StudentDashboardPage() {
 
     if (!data) return null
 
-    const { student, attendance, attendancePercent, payments, materials, syllabusUrl } = data
+    const { student, attendance, attendancePercent, payments, materials, syllabusUrl, courseFee } = data
+
+    const netFee = Math.max(0, (courseFee || 0) - (student.discount_amount || 0));
+    const totalPaid = payments.reduce((acc, curr) => acc + curr.amount_paid, 0);
+    const balance = Math.max(0, netFee - totalPaid);
+    const isSettled = balance === 0;
 
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-white pt-24 pb-12 px-4 md:px-8">
@@ -87,9 +92,31 @@ export default function StudentDashboardPage() {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-8">
                 {/* Sidebar Navigation */}
-                <div className="md:col-span-1 space-y-3">
+                {/* Mobile: horizontal scrollable tabs | Desktop: vertical sidebar */}
+                <div className="flex overflow-x-auto gap-2 pb-1 md:hidden">
+                    {[
+                        { id: 'overview', label: 'Overview', icon: BarChart3 },
+                        { id: 'attendance', label: 'Attendance', icon: Calendar },
+                        { id: 'payments', label: 'Fee Payments', icon: CreditCard },
+                        { id: 'materials', label: 'Materials', icon: FileText },
+                    ].map((tab) => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all border text-sm whitespace-nowrap ${activeTab === tab.id
+                                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 shadow-lg shadow-blue-500/5'
+                                    : 'bg-transparent border-transparent text-gray-400 hover:bg-white/5 hover:text-gray-300'
+                                }`}
+                        >
+                            <tab.icon className="w-4 h-4" />
+                            <span className="font-semibold">{tab.label}</span>
+                        </button>
+                    ))}
+                </div>
+                {/* Desktop vertical nav */}
+                <div className="hidden md:flex md:flex-col md:space-y-3">
                     {[
                         { id: 'overview', label: 'Overview', icon: BarChart3 },
                         { id: 'attendance', label: 'Attendance', icon: Calendar },
@@ -137,16 +164,59 @@ export default function StudentDashboardPage() {
                                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                                         <CreditCard className="w-24 h-24" />
                                     </div>
-                                    <p className="text-gray-400 mb-2 font-medium">Payment Status</p>
-                                    <div className="flex items-end justify-between">
-                                        <div>
-                                            <h3 className="text-4xl font-bold text-white mb-2">
-                                                {payments.some(p => p.payment_type === 'Full' || p.payment_type === 'Installment 2') ? 'Settled' : 'Partial'}
-                                            </h3>
-                                            <p className="text-sm text-green-400">Total Paid: ₹{payments.reduce((acc, curr) => acc + curr.amount_paid, 0)}</p>
+                                    <div className="flex items-center justify-between mb-4 relative z-10">
+                                        <p className="text-gray-400 font-medium">Fee Summary</p>
+                                        <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border ${isSettled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                                            {isSettled ? 'Settled' : 'Pending'}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-3 relative z-10">
+                                        <div className="flex justify-between items-center bg-white/5 p-2 rounded-xl">
+                                            <span className="text-sm text-gray-400">Total Fee</span>
+                                            <span className="font-bold">₹{netFee}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-emerald-500/10 p-2 rounded-xl">
+                                            <span className="text-sm text-emerald-400">Total Paid</span>
+                                            <span className="font-bold text-emerald-400">₹{totalPaid}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-blue-500/10 p-2 rounded-xl border border-blue-500/20">
+                                            <span className="text-sm text-blue-400 font-medium tracking-wide">Balance</span>
+                                            <span className="text-xl font-black text-blue-400">₹{balance}</span>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Recent Transactions */}
+                            <div className="glass-morphism p-6 rounded-3xl border border-white/10 relative overflow-hidden">
+                                <h3 className="font-bold text-lg mb-4 flex items-center justify-between">
+                                    <span>Recent Transactions</span>
+                                    <button onClick={() => setActiveTab('payments')} className="text-xs text-blue-400 hover:text-blue-300 font-medium">View All</button>
+                                </h3>
+                                {payments.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {payments.slice(0, 3).map((p, idx) => (
+                                            <div key={idx} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors border border-white/5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2.5 bg-green-500/10 rounded-xl">
+                                                        <CreditCard className="w-5 h-5 text-green-400" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm text-gray-400 font-medium">{new Date(p.date).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="text-lg font-black text-white">₹{p.amount_paid}</span>
+                                                    <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mt-0.5"><CheckCircle2 className="w-3 h-3 inline mr-1" />Verified</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-6">
+                                        <p className="text-gray-500 text-sm">No payment history found yet.</p>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Status Message */}
@@ -219,8 +289,7 @@ export default function StudentDashboardPage() {
                                                         <CreditCard className="w-6 h-6 text-green-400" />
                                                     </div>
                                                     <div>
-                                                        <h4 className="font-bold">{p.payment_type}</h4>
-                                                        <p className="text-sm text-gray-500">{new Date(p.date).toLocaleDateString()}</p>
+                                                        <p className="text-sm text-gray-400 font-medium">{new Date(p.date).toLocaleDateString()}</p>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">

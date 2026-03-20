@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { getRegistrations, registrationsCsvUrl, getCourses, createCourse, updateCourse, deleteCourse, getDashboardStats, updateRegistrationStatus, getSettings, updateSettings, getAttendance, updateAttendance, notifyCertificate, getAdminAnalytics, checkAbsentees, updateRegistration, getAdminMaterials, addAdminMaterial, deleteAdminMaterial, getAdminPayments, addAdminPayment } from '../lib/api'
+import { getRegistrations, deleteAllRegistrations, deleteRegistration, registrationsCsvUrl, paymentsCsvUrl, getCourses, createCourse, updateCourse, deleteCourse, getDashboardStats, updateRegistrationStatus, getSettings, updateSettings, getAttendance, updateAttendance, notifyCertificate, getAdminAnalytics, updateRegistration, getAdminMaterials, addAdminMaterial, deleteAdminMaterial, getAdminPayments, addAdminPayment } from '../lib/api'
 import type { RegistrationRow, Course, AdminAnalytics, Material, Payment } from '../types'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { LayoutDashboard, Users, BookOpen, Download, Plus, Trash2, Edit3, CheckCircle2, Settings, FileText, Send, Award } from 'lucide-react'
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 
 type LoadState =
   | { status: 'idle' }
@@ -18,21 +18,30 @@ export default function AdminPage() {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem(STORAGE_KEY) ?? '')
   const [activeTab, setActiveTab] = useState<'stats' | 'regs' | 'courses' | 'attendance' | 'certificates' | 'settings' | 'analytics' | 'payments'>('stats')
   const [selectedCourseForMaterials, setSelectedCourseForMaterials] = useState<Course | null>(null)
-  const [paymentForm, setPaymentForm] = useState({
-    payment_type: 'Full' as 'Full' | 'Installment 1' | 'Installment 2',
-    payment_method: 'Cash' as 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'DD',
+  const [paymentForm, setPaymentForm] = useState<{
+    payment_type: string;
+    payment_method: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'DD';
+    discount_amount: string;
+    custom_amount: string;
+    remarks: string;
+  }>({
+    payment_type: 'Full',
+    payment_method: 'Cash',
     discount_amount: '',
     custom_amount: '',
     remarks: ''
   })
   const [state, setState] = useState<LoadState>({ status: 'idle' })
   const [csvBusy, setCsvBusy] = useState(false)
-  const [alertBusy, setAlertBusy] = useState(false)
+
 
   // Edit & Modal State
   const [editingStudent, setEditingStudent] = useState<RegistrationRow | null>(null)
   const [studentPayment, setStudentPayment] = useState<RegistrationRow | null>(null)
+  const [viewingStudentHistory, setViewingStudentHistory] = useState<RegistrationRow | null>(null)
   const [materialForm, setMaterialForm] = useState({ title: '', file_url: '', description: '', course_id: 0 })
+  const [confirmingStudent, setConfirmingStudent] = useState<RegistrationRow | null>(null)
+  const [confirmDiscount, setConfirmDiscount] = useState('')
 
   // Attendance State
   const [selectedBatch, setSelectedBatch] = useState('Batch - I (9.30am - 11.30am)')
@@ -58,9 +67,17 @@ export default function AdminPage() {
   const [settingsForm, setSettingsForm] = useState<any>({
     batchTimes: [],
     promoCodes: [],
-    contactNumber: '',
-    address: ''
+    promoDiscount: 0
   })
+  const [overviewDate, setOverviewDate] = useState(new Date().toISOString().split('T')[0])
+
+  // Search & Filter State
+  const [regSearch, setRegSearch] = useState('')
+  const [regBatchFilter, setRegBatchFilter] = useState('All Batches')
+  const [paySearch, setPaySearch] = useState('')
+  const [payBatchFilter, setPayBatchFilter] = useState('All Batches')
+  const [payRecSearch, setPayRecSearch] = useState('')
+  const [payRecBatchFilter, setPayRecBatchFilter] = useState('All Batches')
 
   const registrations = state.status === 'loaded' ? state.rows : []
   const courses = state.status === 'loaded' ? state.courses : []
@@ -70,7 +87,8 @@ export default function AdminPage() {
     const key = keyOverride ?? adminKey
     if (!key) return
     setState({ status: 'loading' })
-    try {      console.log("Fetching fresh data...")
+    try {
+      console.log("Fetching fresh data...")
       const [r, c, s, sett, att, ana, mat, pay] = await Promise.all([
         getRegistrations(key),
         getCourses(),
@@ -166,6 +184,142 @@ export default function AdminPage() {
     }
   }
 
+  async function downloadPaymentsCsv() {
+    setCsvBusy(true)
+    try {
+      const res = await fetch(paymentsCsvUrl(), { headers: { 'x-admin-key': adminKey } })
+      if (!res.ok) throw new Error('Payment report download failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `payments_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setCsvBusy(false)
+    }
+  }
+
+  function downloadPdf() {
+    const doc = new jsPDF()
+    
+    // Header
+    doc.setFontSize(22)
+    doc.setTextColor(30, 41, 59) // slate-800
+    doc.text('NiKii Digital Academy', 14, 20)
+    
+    doc.setFontSize(12)
+    doc.setTextColor(100, 116, 139) // slate-500
+    doc.text('Student Registration Master List', 14, 28)
+    
+    doc.setFontSize(9)
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 34)
+    doc.text(`Total Records: ${registrations.length}`, 14, 39)
+
+    // Table
+    const tableColumn = ["ID", "Student Name", "Email Address", "Contact", "Selected Course", "Status"]
+    const tableRows = registrations.map(reg => [
+      `#${reg.id}`,
+      reg.fullName,
+      reg.email,
+      reg.mobileNumber,
+      reg.courseSelected,
+      reg.status
+    ])
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 45,
+      theme: 'grid',
+      styles: { 
+        fontSize: 8,
+        cellPadding: 4,
+        valign: 'middle',
+        font: 'helvetica'
+      },
+      headStyles: { 
+        fillColor: [37, 99, 235], // blue-600
+        textColor: 255,
+        fontSize: 9,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 15 },
+        1: { fontStyle: 'bold' },
+        5: { halign: 'center' }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252] // slate-50
+      }
+    })
+
+    doc.save(`registrations_${new Date().toISOString().split('T')[0]}.pdf`)
+  }
+
+  function downloadDayPdf() {
+    const doc = new jsPDF()
+    const filteredRegs = registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate))
+    
+    // Header
+    doc.setFontSize(22)
+    doc.setTextColor(30, 41, 59) // slate-800
+    doc.text('NiKii Digital Academy', 14, 20)
+    
+    doc.setFontSize(12)
+    doc.setTextColor(100, 116, 139) // slate-500
+    doc.text(`Registration Report: ${new Date(overviewDate).toLocaleDateString('en-IN', { dateStyle: 'long' })}`, 14, 28)
+    
+    doc.setFontSize(9)
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 34)
+    doc.text(`Total Records for Day: ${filteredRegs.length}`, 14, 39)
+
+    // Table
+    const tableColumn = ["ID", "Student Name", "Email Address", "Contact", "Selected Course", "Status"]
+    const tableRows = filteredRegs.map(reg => [
+      `#${reg.id}`,
+      reg.fullName,
+      reg.email,
+      reg.mobileNumber,
+      reg.courseSelected,
+      reg.status
+    ])
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 45,
+      theme: 'grid',
+      styles: { 
+        fontSize: 8,
+        cellPadding: 4,
+        valign: 'middle',
+        font: 'helvetica'
+      },
+      headStyles: { 
+        fillColor: [37, 99, 235], // blue-600
+        textColor: 255,
+        fontSize: 9,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 15 },
+        1: { fontStyle: 'bold' },
+        5: { halign: 'center' }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252] // slate-50
+      }
+    })
+
+    doc.save(`registrations_${overviewDate}.pdf`)
+  }
+
   async function handleAttendanceToggle(registrationId: number, currentStatus: string) {
     const newStatus = currentStatus === 'Present' ? 'Absent' : 'Present';
     try {
@@ -210,18 +364,7 @@ export default function AdminPage() {
     }
   }
 
-  async function handleCheckAbsentees() {
-    setAlertBusy(true);
-    try {
-      const res = await checkAbsentees(adminKey);
-      alert(`Success! Sent ${res.alertsSent} WhatsApp alerts to consecutive absentees.`);
-      void load(adminKey);
-    } catch (err) {
-      alert("Failed to trigger absentee check");
-    } finally {
-      setAlertBusy(false);
-    }
-  }
+
 
   async function handleAddMaterial(e: React.FormEvent) {
     e.preventDefault();
@@ -255,7 +398,7 @@ export default function AdminPage() {
     }
     try {
       const disc = paymentForm.discount_amount ? Number(paymentForm.discount_amount) : 0;
-      
+
       // If the student is still Pending, confirm them automatically during this first payment
       if (studentPayment.status === 'Pending') {
         await updateRegistrationStatus(adminKey, studentPayment.id, 'Confirmed', disc);
@@ -475,15 +618,16 @@ export default function AdminPage() {
         <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-blue-600 text-white shadow-2xl shadow-blue-200">
           <LayoutDashboard size={48} />
         </div>
-        <h1 className="text-4xl font-black text-slate-900 tracking-tight">Admin Gateway</h1>
-        <p className="mt-4 max-w-md text-lg font-medium text-slate-500 leading-relaxed">
+        <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">Admin Gateway</h1>
+        <p className="mt-4 max-w-md text-base md:text-lg font-medium text-slate-500 leading-relaxed">
           Unlock the dashboard to manage courses, analyze trends, and view student registrations.
         </p>
-        <div className="mt-10 flex w-full max-w-lg gap-4">
+        <div className="mt-10 flex flex-col sm:flex-row w-full max-w-lg gap-4">
           <input
             type="password"
             value={adminKey}
             onChange={(e) => setAdminKey(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { localStorage.setItem(STORAGE_KEY, adminKey); void load(adminKey) } }}
             placeholder="Enter Admin Access Key"
             className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-lg font-medium outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition shadow-sm"
           />
@@ -500,43 +644,61 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="space-y-8 pb-20">
-      <header className="flex flex-wrap items-center justify-between gap-6">
+    <div className="space-y-6 md:space-y-8 pb-20">
+      <header className="flex flex-wrap items-start md:items-center justify-between gap-4 md:gap-6">
         <div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight">NiKii Dashboard</h1>
+          <h1 className="text-2xl md:text-4xl font-black text-slate-900 tracking-tight">NiKii Dashboard</h1>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-slate-500 font-medium italic">Welcome back, Administrator</p>
+            <p className="text-slate-500 font-medium italic text-sm md:text-base">Welcome back, Administrator</p>
             <button onClick={() => load(adminKey)} className="text-blue-600 hover:text-blue-800 p-1 transition-colors" title="Refresh Data">
               <i className={`bi bi-arrow-clockwise text-lg ${state.status === 'loading' ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={() => { localStorage.removeItem(STORAGE_KEY); setAdminKey(''); setState({ status: 'idle' }); }}
-              className="ml-4 text-xs font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
-            >
-              Sign Out / Change Key
-            </button>
           </div>
         </div>
-        <div className="flex gap-3 rounded-2xl bg-white p-1.5 shadow-sm border border-slate-100">
-          {[
-            { id: 'stats', label: 'Overview', icon: LayoutDashboard },
-            { id: 'analytics', label: 'BI Analytics', icon: BarChart },
-            { id: 'regs', label: 'Students', icon: Users },
-            { id: 'payments', label: 'Payments', icon: Send },
-            { id: 'courses', label: 'CMS', icon: BookOpen },
-            { id: 'attendance', label: 'Attendance', icon: CheckCircle2 },
-            { id: 'certificates', label: 'Certificates', icon: Award },
-            { id: 'settings', label: 'Settings', icon: Settings }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              <tab.icon size={18} />
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <button
+            onClick={async () => {
+              const first = confirm('âš ï¸ WARNING: This will permanently delete ALL student registrations, payments, and attendance records. This cannot be undone!');
+              if (!first) return;
+              const second = confirm('Final confirmation: Are you absolutely sure you want to delete ALL data?');
+              if (!second) return;
+              try {
+                await deleteAllRegistrations(adminKey);
+                alert('All registrations deleted successfully.');
+                load(adminKey);
+              } catch (e: any) {
+                alert('Failed to delete: ' + (e as any).message);
+              }
+            }}
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-100 transition-all"
+            title="Delete all registrations, payments and attendance"
+          >
+            <Trash2 size={16} />
+            Delete All Data
+          </button>
+          {/* Tab bar - horizontally scrollable on mobile */}
+          <div className="overflow-x-auto w-full md:w-auto -mx-1 px-1">
+            <div className="flex gap-1 md:gap-3 rounded-2xl bg-white p-1.5 shadow-sm border border-slate-100 w-max md:w-auto">
+              {[
+                { id: 'stats', label: 'Dashboard', icon: LayoutDashboard },
+                { id: 'regs', label: 'Registrations', icon: Users },
+                { id: 'payments', label: 'Payments', icon: Send },
+                { id: 'attendance', label: 'Attendance', icon: CheckCircle2 },
+                { id: 'courses', label: 'CMS', icon: BookOpen },
+                { id: 'certificates', label: 'Certificates', icon: Award },
+                { id: 'settings', label: 'Settings', icon: Settings }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex items-center gap-1.5 md:gap-2 rounded-xl px-3 md:px-6 py-2 md:py-2.5 text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  <tab.icon size={16} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </header>
       {state.status === 'loading' && (
@@ -569,10 +731,22 @@ export default function AdminPage() {
           {/* --- DASHBOARD OVERVIEW --- */}
           {activeTab === 'stats' && (
             <div className="space-y-8">
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total Registrations</p>
-                  <p className="mt-3 text-5xl font-black text-slate-900">{registrations.length}</p>
+              <div className="grid gap-6 md:grid-cols-3">
+                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total Registrations</p>
+                    <p className="mt-3 text-5xl font-black text-slate-900">{registrations.length}</p>
+                  </div>
+                  <div className="mt-6">
+                    <button
+                      onClick={downloadPdf}
+                      disabled={registrations.length === 0}
+                      className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition"
+                    >
+                      <FileText size={16} />
+                      Export PDF
+                    </button>
+                  </div>
                 </div>
                 <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
                   <p className="text-xs font-black uppercase tracking-widest text-slate-400">Confirmed Admissions</p>
@@ -586,12 +760,56 @@ export default function AdminPage() {
                       : 0}%
                   </p>
                 </div>
-                <div className="rounded-3xl bg-blue-600 p-8 text-white shadow-xl">
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-3">
+                <div className="rounded-[2rem] bg-white p-8 border border-slate-100 shadow-sm hover:scale-[1.02] transition-transform">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Monthly Growth</p>
+                  <p className="mt-4 text-4xl font-black text-slate-900">+12.4%</p>
+                  <p className="mt-2 text-sm font-bold text-emerald-500">Trending Upward</p>
+                </div>
+                <div className="rounded-3xl bg-blue-600 p-8 text-white shadow-xl hover:scale-[1.02] transition-transform">
                   <p className="text-xs font-black uppercase tracking-widest text-blue-200">Revenue Potential</p>
                   <p className="mt-3 text-4xl font-black">₹{registrations.filter(r => r.status === 'Confirmed').length * 5000}+</p>
                 </div>
+                <div className="rounded-[2rem] bg-white p-8 border border-slate-100 shadow-sm hover:scale-[1.02] transition-transform">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Day-wise Reports</p>
+                    <input 
+                      type="date" 
+                      value={overviewDate}
+                      onChange={(e) => setOverviewDate(e.target.value)}
+                      className="text-xs font-bold border-none bg-slate-50 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-blue-500/10"
+                    />
+                  </div>
+                  <div className="flex gap-8 items-end justify-between">
+                    <div className="flex gap-8">
+                      <div>
+                        <p className="text-4xl font-black text-slate-900">
+                          {registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate)).length}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                      </div>
+                      <div className="pl-8 border-l border-slate-100">
+                        <p className="text-4xl font-black text-emerald-600">
+                          {registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate) && r.status === 'Confirmed').length}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-emerald-500 uppercase tracking-widest">Successful</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={downloadDayPdf}
+                      disabled={registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate)).length === 0}
+                      className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
+                      title="Export Day Report PDF"
+                    >
+                      <FileText size={16} />
+                    </button>
+                  </div>
+                </div>
               </div>
 
+              {/* Top Charts */}
               <div className="grid gap-8 lg:grid-cols-2">
                 <div className="rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
                   <h3 className="mb-8 text-xl font-bold text-slate-900 px-2">Course Popularity</h3>
@@ -622,162 +840,315 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* --- BI ANALYTICS TAB --- */}
-          {activeTab === 'analytics' && state.status === 'loaded' && (
-            <div className="space-y-8">
-              <div className="grid gap-6 md:grid-cols-3">
-                <div className="rounded-[2rem] bg-indigo-600 p-8 text-white shadow-xl shadow-indigo-100">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Real-time Conversion</p>
-                  <p className="mt-4 text-5xl font-black">{state.analytics.conversionRate}%</p>
-                  <p className="mt-2 text-sm font-bold opacity-80">{state.analytics.confirmedStudents} Confirmed / {state.analytics.totalRegistrations} Total</p>
-                </div>
-                <div className="rounded-[2rem] bg-white p-8 border border-slate-100 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Monthly Growth</p>
-                  <p className="mt-4 text-4xl font-black text-slate-900">+12.4%</p>
-                  <p className="mt-2 text-sm font-bold text-emerald-500">Trending Upward</p>
-                </div>
-                <div className="rounded-[2rem] bg-white p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Attendance Health</p>
-                  <button
-                    onClick={handleCheckAbsentees}
-                    disabled={alertBusy}
-                    className="mt-4 w-full rounded-xl bg-blue-50 py-3 text-sm font-black text-blue-600 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2"
-                  >
-                    <Send size={16} />
-                    {alertBusy ? 'Checking...' : 'Send Absentee Alerts'}
-                  </button>
-                </div>
-              </div>
 
-              <div className="rounded-[2.5rem] bg-white p-10 border border-slate-100 shadow-sm">
-                <h3 className="text-xl font-bold text-slate-900 mb-10 flex items-center gap-3">
-                  <i className="bi bi-graph-up-arrow text-emerald-500" />
-                  Revenue Forecast & Performance
-                </h3>
-                <div className="h-[400px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={state.analytics.revenueTrend}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                      <Tooltip
-                        contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', padding: '16px' }}
-                        itemStyle={{ fontWeight: '900', color: '#2563eb' }}
-                      />
-                      <Line type="monotone" dataKey="value" name="Revenue (₹)" stroke="#2563eb" strokeWidth={6} dot={{ r: 8, fill: '#2563eb', strokeWidth: 4, stroke: '#fff' }} activeDot={{ r: 10 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
             </div>
           )}
 
           {/* --- PAYMENTS TAB --- */}
           {activeTab === 'payments' && state.status === 'loaded' && (() => {
-            const { paymentSummary: ps, pendingSecondInstalment: pending } = state;
+            const { payments, rows, courses } = state;
+            
+            const totalRevenue = payments.reduce((sum, p) => sum + p.amount_paid, 0);
+            
+            const settlementStats = rows.reduce((acc, student) => {
+              if (student.status !== 'Confirmed') return acc;
+              const course = courses.find(c => c.title === student.courseSelected);
+              const baseFee = course?.totalFee || 0;
+              const discount = student.discount_amount || 0;
+              const netFee = Math.max(0, baseFee - discount);
+              
+              const paid = payments
+                .filter(p => p.registration_id === student.id)
+                .reduce((sum, p) => sum + p.amount_paid, 0);
+              
+              if (paid >= netFee && netFee > 0) acc.fullyPaid++;
+              else if (paid > 0 && paid < netFee) acc.partiallyPaid++;
+              else if (netFee > 0 && paid === 0) acc.noPayment++;
+              
+              return acc;
+            }, { fullyPaid: 0, partiallyPaid: 0, noPayment: 0 });
+
             return (
               <div className="space-y-8">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="rounded-3xl bg-gradient-to-br from-blue-600 to-blue-700 p-6 text-white shadow-xl shadow-blue-100">
                     <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-3">Total Revenue</p>
-                    <p className="text-4xl font-black">₹{ps.totalRevenue.toLocaleString()}</p>
-                    <p className="text-xs mt-2 opacity-60">All payments combined</p>
+                    <p className="text-4xl font-black">₹{totalRevenue.toLocaleString()}</p>
+                    <p className="text-xs mt-2 opacity-60">All-time collections</p>
                   </div>
                   <div className="rounded-3xl bg-white border border-slate-100 p-6 shadow-sm">
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Full Settlement</p>
-                    <p className="text-4xl font-black text-slate-900">{ps.totalFullCount}</p>
-                    <p className="text-xs mt-2 text-emerald-500 font-bold">Students fully paid</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Fully Settled</p>
+                    <p className="text-4xl font-black text-slate-900">{settlementStats.fullyPaid}</p>
+                    <p className="text-xs mt-2 text-emerald-500 font-bold">100% balance cleared</p>
                   </div>
                   <div className="rounded-3xl bg-white border border-slate-100 p-6 shadow-sm">
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Instalment 1 Paid</p>
-                    <p className="text-4xl font-black text-slate-900">{ps.totalInstalment1Count}</p>
-                    <p className="text-xs mt-2 text-blue-500 font-bold">In 2-part payment plan</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Partial Payments</p>
+                    <p className="text-4xl font-black text-slate-900">{settlementStats.partiallyPaid}</p>
+                    <p className="text-xs mt-2 text-blue-500 font-bold">Ongoing fee installments</p>
                   </div>
                   <div className="rounded-3xl bg-amber-50 border border-amber-100 p-6 shadow-sm">
-                    <p className="text-xs font-black uppercase tracking-widest text-amber-500 mb-3">Pending 2nd Inst.</p>
-                    <p className="text-4xl font-black text-amber-600">{ps.pendingInst2Count}</p>
-                    <p className="text-xs mt-2 text-amber-400 font-bold">Awaiting 2nd payment</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-amber-500 mb-3">Awaiting Start</p>
+                    <p className="text-4xl font-black text-amber-600">{settlementStats.noPayment}</p>
+                    <p className="text-xs mt-2 text-amber-400 font-bold">First payment pending</p>
                   </div>
                 </div>
 
-                {/* Pending 2nd Instalment Section */}
-                {pending.length > 0 && (
-                  <div className="rounded-[2.5rem] bg-amber-50 border border-amber-100 p-8 shadow-sm">
-                    <h4 className="text-lg font-black text-amber-700 mb-5 flex items-center gap-2">
-                      ⏳ Pending 2nd Instalment ({pending.length})
-                    </h4>
-                    <div className="space-y-3">
-                      {pending.map(p => (
-                        <div key={p.id} className="flex items-center justify-between bg-white rounded-2xl px-6 py-4 border border-amber-100">
-                          <div>
-                            <p className="font-bold text-slate-900">{p.registrations?.fullName}</p>
-                            <p className="text-xs text-slate-400">{p.registrations?.mobileNumber} • 1st: ₹{p.amount_paid} paid</p>
-                          </div>
-                          <button
-                            onClick={() => {
-                              const reg = state.rows.find(r => r.id === p.registration_id);
-                              if (reg) {
-                                setStudentPayment(reg);
-                                setPaymentForm(prev => ({ ...prev, payment_type: 'Installment 2' }));
-                              }
-                            }}
-                            className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-black text-white hover:bg-amber-600 transition"
-                          >
-                            Record 2nd Instalment
-                          </button>
-                        </div>
-                      ))}
+                {/* Record Payment Section */}
+                <div className="rounded-[2.5rem] bg-white border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="px-8 py-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <h3 className="font-black text-slate-900 text-lg pr-4 border-r border-slate-100">Record Fee Payment</h3>
+                      <p className="text-xs text-slate-400 font-medium tracking-tight">Select a student (Confirmed) to add payment</p>
+                    </div>
+
+                    <div className="flex items-center gap-3 flex-1 justify-end min-w-[300px]">
+                      <div className="relative group max-w-sm flex-1">
+                        <i className="bi bi-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                        <input
+                          type="text"
+                          placeholder="Search student..."
+                          value={paySearch}
+                          onChange={e => setPaySearch(e.target.value)}
+                          className="w-full rounded-xl border border-slate-100 bg-slate-50 py-2 pl-11 pr-4 text-sm font-bold outline-none focus:border-blue-500 transition-all focus:ring-4 focus:ring-blue-500/10"
+                        />
+                      </div>
+                      <select
+                        value={payBatchFilter}
+                        onChange={e => setPayBatchFilter(e.target.value)}
+                        className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-600 outline-none focus:border-blue-500 transition-all h-[40px]"
+                      >
+                        <option>All Batches</option>
+                        {settingsForm.batchTimes?.map((bt: string) => (
+                          <option key={bt} value={bt}>{bt}</option>
+                        ))}
+                      </select>
+
+                      {/* Export Balance Fees */}
+                      <button
+                        onClick={() => {
+                          const balanceStudents = rows
+                            .filter(r => r.status === 'Confirmed')
+                            .map(r => {
+                              const course = courses.find(c => c.title === r.courseSelected);
+                              const netFee = Math.max(0, (course?.totalFee || 0) - (r.discount_amount || 0));
+                              const paid = payments.filter(p => p.registration_id === r.id).reduce((s, p) => s + p.amount_paid, 0);
+                              const balance = Math.max(0, netFee - paid);
+                              return { ...r, netFee, paid, balance };
+                            })
+                            .filter(r => r.balance > 0);
+
+                          const header = 'ID,Name,Mobile,Course,Batch,Net Fee,Paid,Balance';
+                          const csvRows = balanceStudents.map(r =>
+                            `${r.id},"${r.fullName}",${r.mobileNumber},"${r.courseSelected}","${r.preferredBatchTime}",${r.netFee},${r.paid},${r.balance}`
+                          );
+                          const csv = [header, ...csvRows].join('\n');
+                          const blob = new Blob([csv], { type: 'text/csv' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `balance-fees-${new Date().toISOString().split('T')[0]}.csv`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-2 text-xs font-black text-amber-700 hover:bg-amber-600 hover:text-white transition-all h-[40px] whitespace-nowrap"
+                      >
+                        <Download size={14} />
+                        Export Balance Fees
+                      </button>
                     </div>
                   </div>
-                )}
 
-                {/* Payment History Table */}
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 mb-4">All Payment Records</h3>
+                   {(() => {
+                    const filteredRegs = rows
+                      .filter(r => r.status === 'Confirmed')
+                      .filter(r => {
+                        const course = courses.find(c => c.title === r.courseSelected);
+                        const netFee = Math.max(0, (course?.totalFee || 0) - (r.discount_amount || 0));
+                        const paid = payments.filter(p => p.registration_id === r.id).reduce((s, p) => s + p.amount_paid, 0);
+                        const balance = Math.max(0, netFee - paid);
+                        return balance > 0; // Only show students with outstanding balance
+                      })
+                      .filter(r => {
+                        const s = paySearch.toLowerCase();
+                        const matchesSearch = r.fullName.toLowerCase().includes(s) || r.mobileNumber.includes(s);
+                        const matchesBatch = payBatchFilter === 'All Batches' || r.preferredBatchTime === payBatchFilter;
+                        return matchesSearch && matchesBatch;
+                      });
+
+                    if (filteredRegs.length === 0) return <div className="p-10 text-center text-emerald-600 font-bold italic"><CheckCircle2 className="mx-auto mb-2" size={28} />All fees are settled! No pending balances.</div>;
+
+                    return (
+                      <div className="divide-y divide-slate-50">
+                        {filteredRegs.map(reg => {
+                          const course = courses.find(c => c.title === reg.courseSelected);
+                          const netFee = Math.max(0, (course?.totalFee || 0) - (reg.discount_amount || 0));
+                          const paid = payments.filter(p => p.registration_id === reg.id).reduce((s, p) => s + p.amount_paid, 0);
+                          const balance = Math.max(0, netFee - paid);
+                          return (
+                            <div key={reg.id} className="flex items-center justify-between px-8 py-5 hover:bg-slate-50/50 transition-colors">
+                              <div className="space-y-1">
+                                <p className="font-bold text-slate-900 leading-none">{reg.fullName}</p>
+                                <p className="text-xs text-slate-400 font-medium uppercase tracking-widest">{reg.courseSelected} • {reg.preferredBatchTime}</p>
+                              </div>
+                              <div className="flex items-center gap-8">
+                                <div className="text-right flex flex-col items-end">
+                                  <span className="text-[10px] font-black uppercase text-slate-300 tracking-widest mb-0.5">Balance</span>
+                                  <span className={`text-base font-black ${balance > 0 ? 'text-blue-600' : 'text-emerald-500'}`}>
+                                    {balance > 0 ? `₹${balance}` : '✓ Settled'}
+                                  </span>
+                                </div>
+                                  {balance > 0 ? (
+                                    <button
+                                      onClick={() => {
+                                        setStudentPayment(reg);
+                                        setPaymentForm({
+                                          payment_type: 'Full',
+                                          payment_method: 'Cash',
+                                          discount_amount: '',
+                                          custom_amount: balance > 0 ? String(balance) : '',
+                                          remarks: ''
+                                        });
+                                      }}
+                                      className="rounded-xl bg-blue-50 px-5 py-2.5 text-xs font-black text-blue-700 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                    >
+                                      Record Payment
+                                    </button>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 rounded-xl bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 border border-emerald-100/50">
+                                      <CheckCircle2 size={14} />
+                                      Fees Paid
+                                    </div>
+                                  )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* All Payment Records Table */}
+                <div className="space-y-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <h3 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                      <i className="bi bi-card-checklist text-blue-600" />
+                      All Payment Records
+                    </h3>
+                    
+                    <div className="flex items-center gap-3">
+                      <div className="relative group md:w-80">
+                        <i className="bi bi-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                        <input
+                          type="text"
+                          placeholder="Filter name or mobile..."
+                          value={payRecSearch}
+                          onChange={(e) => setPayRecSearch(e.target.value)}
+                          className="w-full rounded-xl border border-slate-100 bg-white py-2 pl-11 pr-4 text-sm font-bold outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm"
+                        />
+                      </div>
+                      
+                      <select
+                        value={payRecBatchFilter}
+                        onChange={(e) => setPayRecBatchFilter(e.target.value)}
+                        className="rounded-xl border border-slate-100 bg-white px-4 py-2 text-sm font-black text-slate-600 outline-none transition-all focus:border-blue-500 shadow-sm h-[40px]"
+                      >
+                        <option>All Batches</option>
+                        {settingsForm.batchTimes?.map((bt: string) => (
+                          <option key={bt} value={bt}>{bt}</option>
+                        ))}
+                      </select>
+
+                      <button
+                        onClick={downloadPaymentsCsv}
+                        disabled={csvBusy}
+                        className="flex items-center gap-2 rounded-xl bg-slate-900 px-6 py-2 text-sm font-black text-white hover:bg-slate-800 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                      >
+                        <Download size={18} />
+                        {csvBusy ? '...' : 'Export Excellence'}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="overflow-hidden rounded-[2.5rem] border border-slate-100 bg-white shadow-sm overflow-x-auto">
-                    <table className="w-full text-left">
+                    <table className="w-full text-left border-collapse">
                       <thead className="bg-slate-50 border-b border-slate-100">
                         <tr>
-                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Student</th>
-                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Amount & Type</th>
-                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Method</th>
-                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Date</th>
-                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Remarks</th>
+                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400 tracking-widest text-[10px]">Student Identity</th>
+                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400 tracking-widest text-[10px]">Financial Snapshot</th>
+                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400 tracking-widest text-[10px]">Method</th>
+                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400 tracking-widest text-[10px]">Transaction Date</th>
+                          <th className="px-8 py-5 text-xs font-black uppercase text-slate-400 tracking-widest text-[10px]">Remarks</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {state.payments.map(p => (
-                          <tr key={p.id} className="hover:bg-slate-50/50">
-                            <td className="px-8 py-5">
-                              <p className="font-bold text-slate-900">{p.registrations?.fullName || 'Unknown'}</p>
-                              <p className="text-xs text-slate-400">{p.registrations?.mobileNumber}</p>
-                            </td>
-                            <td className="px-8 py-5">
-                              <p className="text-sm font-black text-blue-600">₹{p.amount_paid}</p>
-                              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
-                                p.payment_type === 'Full' ? 'bg-emerald-100 text-emerald-700'
-                                : p.payment_type === 'Installment 1' ? 'bg-blue-100 text-blue-700'
-                                : 'bg-amber-100 text-amber-700'
-                              }`}>{p.payment_type}</span>
-                            </td>
-                            <td className="px-8 py-5">
-                              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
-                                p.payment_method === 'Cash' ? 'bg-slate-100 text-slate-600'
-                                : p.payment_method === 'UPI' ? 'bg-violet-100 text-violet-700'
-                                : p.payment_method === 'Bank Transfer' ? 'bg-blue-100 text-blue-700'
-                                : 'bg-orange-100 text-orange-700'
-                              }`}>
-                                {p.payment_method || 'Cash'}
-                              </span>
-                            </td>
-                            <td className="px-8 py-5 text-sm text-slate-500">{new Date(p.date).toLocaleDateString('en-IN')}</td>
-                            <td className="px-8 py-5 text-sm text-slate-400 italic">{p.remarks || '-'}</td>
-                          </tr>
-                        ))}
+                        {(() => {
+                          const filteredPayments = payments.filter(p => {
+                            const reg = rows.find(r => r.id === p.registration_id);
+                            if (!reg) return false;
+                            
+                            const matchesSearch = reg.fullName.toLowerCase().includes(payRecSearch.toLowerCase()) || reg.mobileNumber.includes(payRecSearch);
+                            const matchesBatch = payRecBatchFilter === 'All Batches' || reg.preferredBatchTime === payRecBatchFilter;
+                            return matchesSearch && matchesBatch;
+                          });
+
+                          return filteredPayments.map(p => {
+                             const reg = rows.find(r => r.id === p.registration_id);
+                             const course = courses.find(c => c.title === reg?.courseSelected);
+                             const netFee = Math.max(0, (course?.totalFee || 0) - (reg?.discount_amount || 0));
+                             const totalPaid = payments.filter(pm => pm.registration_id === p.registration_id).reduce((s, pm) => s + pm.amount_paid, 0);
+                             const balance = Math.max(0, netFee - totalPaid);
+
+                             return (
+                              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                                <td className="px-8 py-5">
+                                   <button 
+                                     onClick={() => reg && setViewingStudentHistory(reg)}
+                                     className="text-left group/btn transition-transform active:scale-95"
+                                   >
+                                      <div className="flex flex-col space-y-0.5">
+                                        <span className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{reg?.fullName || 'Unknown'}</span>
+                                        <span className="text-[10px] font-bold text-slate-400">{reg?.mobileNumber} • {reg?.preferredBatchTime}</span>
+                                      </div>
+                                   </button>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <div className="flex flex-col gap-1.5">
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-lg font-black text-blue-600">₹{p.amount_paid}</span>
+                                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-tighter">({p.payment_type})</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[9px] font-black uppercase text-emerald-600">Paid: ₹{totalPaid}</span>
+                                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase ${balance > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>Bal: ₹{balance}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <span className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black ${
+                                    p.payment_method === 'Cash' ? 'bg-slate-100 text-slate-600'
+                                    : p.payment_method === 'UPI' ? 'bg-violet-100 text-violet-700'
+                                    : p.payment_method === 'Bank Transfer' ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-orange-100 text-orange-700'
+                                  }`}>
+                                    {p.payment_method}
+                                  </span>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-bold text-slate-700">{new Date(p.date).toLocaleDateString('en-IN')}</span>
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date(p.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </div>
+                                </td>
+                                <td className="px-8 py-5">
+                                  <p className="text-sm italic text-slate-400 max-w-[200px] truncate" title={p.remarks || ""}>{p.remarks || "No records provided"}</p>
+                                </td>
+                              </tr>
+                             )
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -786,11 +1157,38 @@ export default function AdminPage() {
             );
           })()}
 
-          {/* --- STUDENTS TAB --- */}
           {activeTab === 'regs' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-black text-slate-900">Registered Students</h3>
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                <div className="flex flex-wrap items-center gap-4 flex-1">
+                  <h3 className="text-2xl font-black text-slate-900 pr-4 border-r border-slate-200">Registrations</h3>
+                  
+                  <div className="relative flex-1 max-w-md">
+                    <i className="bi bi-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search name, mobile, or course..."
+                      value={regSearch}
+                      onChange={e => setRegSearch(e.target.value)}
+                      className="w-full rounded-xl border border-slate-100 bg-slate-50 pl-11 pr-4 py-2 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition"
+                    />
+                  </div>
+
+                  <div className="relative">
+                    <select
+                      value={regBatchFilter}
+                      onChange={e => setRegBatchFilter(e.target.value)}
+                      className="appearance-none rounded-xl border border-slate-100 bg-slate-50 pl-4 pr-10 py-2 text-sm font-bold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition"
+                    >
+                      <option>All Batches</option>
+                      {(settingsForm.batchTimes || []).map((b: string) => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                    <i className="bi bi-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
                 <button
                   onClick={downloadCsv}
                   disabled={csvBusy || registrations.length === 0}
@@ -800,18 +1198,28 @@ export default function AdminPage() {
                   {csvBusy ? 'Preparing...' : 'Export CSV'}
                 </button>
               </div>
+
               <div className="overflow-hidden rounded-[2.5rem] border border-slate-100 bg-white shadow-sm overflow-x-auto">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 border-b border-slate-100">
                     <tr>
                       <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Student Identity</th>
-                      <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Academic History</th>
-                      <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Enrollment Details</th>
+                      <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Course & Batch</th>
+                      <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Fee Status (₹)</th>
                       <th className="px-8 py-5 text-xs font-black uppercase text-slate-400">Status & Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {registrations.map(reg => (
+                    {registrations
+                      .filter(reg => {
+                        const searchLower = regSearch.toLowerCase()
+                        const matchesSearch = reg.fullName.toLowerCase().includes(searchLower) ||
+                          reg.mobileNumber.includes(regSearch) ||
+                          reg.courseSelected.toLowerCase().includes(searchLower)
+                        const matchesBatch = regBatchFilter === 'All Batches' || reg.preferredBatchTime === regBatchFilter
+                        return matchesSearch && matchesBatch
+                      })
+                      .map(reg => (
                       <tr key={reg.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-8 py-6">
                           <div className="font-bold text-slate-900">{reg.fullName}</div>
@@ -819,70 +1227,63 @@ export default function AdminPage() {
                           <div className="mt-2 text-[10px] font-black uppercase tracking-tighter text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md inline-block">ID: #REG-{reg.id.toString().padStart(4, '0')}</div>
                         </td>
                         <td className="px-8 py-6">
-                          <div className="text-sm font-bold text-slate-800">{reg.highestQualification}</div>
-                          <div className="text-xs text-slate-500 font-medium">{reg.schoolCollegeName}</div>
-                        </td>
-                        <td className="px-8 py-6">
-                          <div className="text-sm font-bold text-blue-600 leading-tight">{reg.courseSelected}</div>
+                          <div className="text-sm font-bold text-slate-900 leading-tight">{reg.courseSelected}</div>
+                          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{reg.preferredBatchTime}</div>
                           <a
                             href={`https://wa.me/${reg.mobileNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${reg.fullName}, this is NiKii Computer Academy. We received your registration for ${reg.courseSelected}. How can we help you today?`)}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="mt-2 flex items-center gap-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition"
+                            className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition"
                           >
                             <i className="bi bi-whatsapp" />
                             {reg.mobileNumber}
                           </a>
                         </td>
                         <td className="px-8 py-6">
-                          <div className="flex items-center gap-3">
-                            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${reg.status === 'Confirmed' ? 'bg-emerald-100 text-emerald-700' :
+                          {(() => {
+                            const course = courses.find(c => c.title === reg.courseSelected);
+                            const baseFee = course?.totalFee || 0;
+                            const discount = reg.discount_amount || 0;
+                            const netFee = Math.max(0, baseFee - discount);
+                            const totalPaid = state.status === 'loaded' 
+                              ? state.payments.filter(p => p.registration_id === reg.id).reduce((sum, p) => sum + p.amount_paid, 0)
+                              : 0;
+                            const balance = Math.max(0, netFee - totalPaid);
+                            
+                            return (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-400 font-bold uppercase text-[9px]">Total:</span>
+                                  <span className="font-bold text-slate-700">₹{netFee}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-400 font-bold uppercase text-[9px]">Paid:</span>
+                                  <span className="font-black text-emerald-600">₹{totalPaid}</span>
+                                </div>
+                                <div className="flex justify-between text-xs pt-1 border-t border-slate-50">
+                                  <span className="text-slate-400 font-bold uppercase text-[9px]">Bal:</span>
+                                  <span className={`font-black ${balance > 0 ? 'text-blue-600' : 'text-slate-300'}`}>₹{balance}</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-8 py-6">
+                          <div className="flex flex-col gap-3">
+                            <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit ${reg.status === 'Confirmed' ? 'bg-emerald-100 text-emerald-700' :
                               reg.status === 'Rejected' ? 'bg-red-100 text-red-700' :
                                 'bg-amber-100 text-amber-700'
                               }`}>
                               {reg.status}
                             </span>
                             <div className="flex gap-2">
-                              <button
-                                onClick={() => setEditingStudent(reg)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                                title="Edit Student Details"
-                              >
-                                <Edit3 size={14} />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setStudentPayment(reg);
-                                  const base = courses.find(c => c.title === reg.courseSelected)?.totalFee || 0;
-                                  const d = reg.discount_amount || 0;
-                                  setPaymentForm({
-                                    payment_type: 'Full',
-                                    payment_method: 'Cash',
-                                    discount_amount: d ? String(d) : '',
-                                    custom_amount: base ? String(Math.max(0, base - d)) : '',
-                                    remarks: ''
-                                  });
-                                }}
-                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                                title="Record Fee Payment"
-                              >
-                                <i className="bi bi-currency-rupee text-sm" />
-                              </button>
                             </div>
                             {reg.status === 'Pending' && (
                               <div className="flex gap-2">
                                 <button
                                   onClick={() => {
-                                    setStudentPayment(reg);
-                                    const base = courses.find(c => c.title === reg.courseSelected)?.totalFee || 0;
-                                    const d = reg.discount_amount || 0;
-                                    setPaymentForm({
-                                      payment_type: 'Full',
-                                      payment_method: 'Cash',
-                                      discount_amount: d ? String(d) : '',
-                                      custom_amount: base ? String(Math.max(0, base - d)) : '',
-                                      remarks: ''
-                                    });
+                                    setConfirmingStudent(reg);
+                                    setConfirmDiscount(reg.discount_amount ? String(reg.discount_amount) : '');
                                   }}
                                   className="text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition flex items-center gap-1 shadow-sm"
                                 >
@@ -890,7 +1291,11 @@ export default function AdminPage() {
                                   Confirm
                                 </button>
                                 <button
-                                  onClick={() => { if (confirm('Reject this registration?')) handleUpdateStatus(reg.id, 'Rejected') }}
+                                  onClick={async () => {
+                                    if (!confirm('Reject and permanently DELETE this registration? This cannot be undone.')) return;
+                                    await deleteRegistration(adminKey, reg.id);
+                                    load(adminKey);
+                                  }}
                                   className="text-[10px] font-black uppercase tracking-widest bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition flex items-center gap-1 shadow-sm"
                                 >
                                   <Trash2 size={12} />
@@ -963,11 +1368,10 @@ export default function AdminPage() {
                           <button
                             onClick={() => setSelectedCourseForMaterials(selectedCourseForMaterials?.id === course.id ? null : course)}
                             title="Manage Materials"
-                            className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${
-                              selectedCourseForMaterials?.id === course.id
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${selectedCourseForMaterials?.id === course.id
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'
-                            }`}
+                              }`}
                           >
                             <FileText size={18} />
                           </button>
@@ -1048,34 +1452,34 @@ export default function AdminPage() {
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Title</label>
                       <input
                         value={courseForm.title} onChange={e => setCourseForm({ ...courseForm, title: e.target.value })}
-                        className="w-full rounded-2xl bg-slate-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
                         placeholder="Ex: Web Designing"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Duration</label>
-                        <input value={courseForm.duration} onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })} className="w-full rounded-2xl bg-slate-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="6 Months" />
+                        <input value={courseForm.duration} onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })} className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="6 Months" />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-widest text-blue-500 flex items-center gap-1">Total Fees (₹)</label>
-                        <input type="number" value={courseForm.totalFee || ''} onChange={e => setCourseForm({ ...courseForm, totalFee: Number(e.target.value) || 0 })} className="w-full rounded-2xl bg-blue-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="e.g. 15000" />
+                        <input type="number" value={courseForm.totalFee || ''} onChange={e => setCourseForm({ ...courseForm, totalFee: Number(e.target.value) || 0 })} className="w-full rounded-xl bg-blue-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="e.g. 15000" />
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Description</label>
-                      <textarea value={courseForm.description} onChange={e => setCourseForm({ ...courseForm, description: e.target.value })} rows={3} className="w-full rounded-2xl bg-slate-50 border-none px-5 py-3.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none resize-none" />
+                      <textarea value={courseForm.description} onChange={e => setCourseForm({ ...courseForm, description: e.target.value })} rows={3} className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none resize-none" />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo URL (Optional)</label>
-                        <input value={courseForm.imageUrl || ''} onChange={e => setCourseForm({ ...courseForm, imageUrl: e.target.value })} className="w-full rounded-2xl bg-slate-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="https://logo.png" />
+                        <input value={courseForm.imageUrl || ''} onChange={e => setCourseForm({ ...courseForm, imageUrl: e.target.value })} className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="https://logo.png" />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-widest text-emerald-500 flex items-center gap-1">
-                          📄 Syllabus URL
+                          ðŸ“„ Syllabus URL
                         </label>
-                        <input value={courseForm.syllabusUrl || ''} onChange={e => setCourseForm({ ...courseForm, syllabusUrl: e.target.value })} className="w-full rounded-2xl bg-emerald-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 transition outline-none" placeholder="https://drive.google.com/..." />
+                        <input value={courseForm.syllabusUrl || ''} onChange={e => setCourseForm({ ...courseForm, syllabusUrl: e.target.value })} className="w-full rounded-xl bg-emerald-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 transition outline-none" placeholder="https://drive.google.com/..." />
                       </div>
                     </div>
                     <div className="space-y-1.5">
@@ -1083,7 +1487,7 @@ export default function AdminPage() {
                       <input
                         value={(courseForm.features || []).join(', ')}
                         onChange={e => setCourseForm({ ...courseForm, features: e.target.value.split(',').map(s => s.trim()).filter(s => s !== '') })}
-                        className="w-full rounded-2xl bg-slate-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
                         placeholder="Ex: Photoshop, Tally, GST"
                       />
                     </div>
@@ -1102,7 +1506,7 @@ export default function AdminPage() {
                     {courseForm.isPromoted && (
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Badge Text (e.g., 50% OFF)</label>
-                        <input value={courseForm.badgeText || ''} onChange={e => setCourseForm({ ...courseForm, badgeText: e.target.value })} className="w-full rounded-2xl bg-slate-50 border-none px-5 py-3.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="SUMMER OFFER" />
+                        <input value={courseForm.badgeText || ''} onChange={e => setCourseForm({ ...courseForm, badgeText: e.target.value })} className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none" placeholder="SUMMER OFFER" />
                       </div>
                     )}
                     <button type="submit" className="w-full rounded-2xl bg-blue-600 py-4 text-sm font-black text-white shadow-xl shadow-blue-100 hover:bg-blue-700 transition active:scale-[0.98]">
@@ -1166,6 +1570,28 @@ export default function AdminPage() {
 
                 <div className="mb-6 flex items-center justify-between print:mb-10">
                   <h3 className="text-xl font-bold text-slate-900">Batch Members ({registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed').length})</h3>
+                  {registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed').length > 0 && (
+                    <button
+                      onClick={async () => {
+                        const batchStudents = registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed');
+                        const records = batchStudents.map(reg => ({
+                          registrationId: reg.id,
+                          status: (state.status === 'loaded' ? state.attendance.find(a => a.registration_id === reg.id)?.status ?? 'Present' : 'Present')
+                        }));
+                        try {
+                          await updateAttendance(adminKey, attendanceDate, records);
+                          alert('Attendance recorded successfully!');
+                          void load(adminKey);
+                        } catch {
+                          alert('Failed to record attendance');
+                        }
+                      }}
+                      className="print:hidden flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-black text-white hover:bg-emerald-700 transition shadow-lg shadow-emerald-100"
+                    >
+                      <CheckCircle2 size={14} />
+                      Record Attendance
+                    </button>
+                  )}
                 </div>
 
                 <table className="w-full text-left">
@@ -1174,14 +1600,14 @@ export default function AdminPage() {
                       <th className="px-6 py-4 text-xs font-black uppercase text-slate-400 print:text-slate-700">Student Name</th>
                       <th className="px-6 py-4 text-xs font-black uppercase text-slate-400 print:text-slate-700">Course</th>
                       <th className="px-6 py-4 text-xs font-black uppercase text-slate-400 print:text-slate-700 w-24">Attendance</th>
-                      <th className="px-6 py-4 text-xs font-black uppercase text-slate-400 print:text-slate-700 w-32">Remarks</th>
+
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {registrations
                       .filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed')
                       .map(reg => {
-                        const status = state.status === 'loaded' ? state.attendance.find(a => a.registration_id === reg.id)?.status : 'Absent';
+                        const status = state.status === 'loaded' ? state.attendance.find(a => a.registration_id === reg.id)?.status ?? 'Present' : 'Present';
                         return (
                           <tr key={reg.id} className="print:break-inside-avoid">
                             <td className="px-6 py-4">
@@ -1202,9 +1628,6 @@ export default function AdminPage() {
                                 </button>
                               </div>
                               <div className="hidden print:block h-6 w-12 border-2 border-slate-200 rounded print:border-slate-400" />
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="h-6 w-full border-b-2 border-slate-100 print:border-slate-300" />
                             </td>
                           </tr>
                         )
@@ -1392,7 +1815,7 @@ export default function AdminPage() {
                       <input
                         value={settingsForm.contactNumber}
                         onChange={e => setSettingsForm({ ...settingsForm, contactNumber: e.target.value })}
-                        className="w-full rounded-2xl bg-slate-50 border-none px-6 py-4 text-lg font-bold text-slate-900"
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
                       />
                     </div>
                     <div className="space-y-2">
@@ -1400,7 +1823,7 @@ export default function AdminPage() {
                       <input
                         value={settingsForm.address}
                         onChange={e => setSettingsForm({ ...settingsForm, address: e.target.value })}
-                        className="w-full rounded-2xl bg-slate-50 border-none px-6 py-4 text-lg font-bold text-slate-900"
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900"
                       />
                     </div>
                   </div>
@@ -1416,11 +1839,9 @@ export default function AdminPage() {
               </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* --- MODALS --- */}
-      {editingStudent && (
+          {/* --- MODALS --- */}
+          {editingStudent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl rounded-[3rem] bg-white p-8 md:p-12 shadow-2xl animate-in zoom-in-95 duration-300">
             <h2 className="text-3xl font-black text-slate-900 mb-8">Edit Student Record</h2>
@@ -1456,100 +1877,165 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* â”€â”€ CONFIRM REGISTRATION MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {confirmingStudent && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-[2.5rem] bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300 space-y-6">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900">Confirm Registration</h2>
+                <p className="text-slate-400 text-sm mt-1">
+                  For <span className="font-bold text-emerald-600">{confirmingStudent.fullName}</span>
+                </p>
+              </div>
+              <button onClick={() => setConfirmingStudent(null)} className="h-9 w-9 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100 transition">
+                <Plus size={18} className="rotate-45" />
+              </button>
+            </div>
+
+            {/* Course Fee Summary */}
+            {(() => {
+              const course = courses.find(c => c.title === confirmingStudent.courseSelected);
+              const baseFee = course?.totalFee || 0;
+              const disc = Number(confirmDiscount) || 0;
+              const netFee = Math.max(0, baseFee - disc);
+              return (
+                <div className="rounded-3xl bg-slate-50 p-6 space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Course</span>
+                    <span className="font-bold text-slate-700">{confirmingStudent.courseSelected}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Original Fee</span>
+                    <span className="font-black text-slate-900">₹{baseFee}</span>
+                  </div>
+                  {disc > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-orange-500 font-bold uppercase text-[10px] tracking-widest">Discount</span>
+                      <span className="font-black text-orange-500">âˆ’ ₹{disc}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-3 border-t border-slate-200">
+                    <span className="text-emerald-600 font-black uppercase text-[10px] tracking-widest">Net Fee</span>
+                    <span className="text-xl font-black text-emerald-600">₹{netFee}</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Discount Input */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-orange-400 inline-block" />
+                Discount Amount (₹) "” Optional
+              </label>
+              <input
+                type="number"
+                min={0}
+                placeholder="0 (no discount)"
+                value={confirmDiscount}
+                onChange={e => setConfirmDiscount(e.target.value)}
+                className="w-full rounded-xl bg-orange-50 border-2 border-orange-100 px-4 py-2.5 text-base font-black text-orange-700 focus:bg-white focus:border-orange-400 focus:ring-4 focus:ring-orange-500/10 transition outline-none"
+              />
+              <p className="text-[10px] text-slate-400 font-medium">This discount permanently reduces the course fee for this student.</p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  const disc = Number(confirmDiscount) || 0;
+                  await handleUpdateStatus(confirmingStudent.id, 'Confirmed', disc > 0 ? disc : undefined);
+                  setConfirmingStudent(null);
+                  setConfirmDiscount('');
+                }}
+                className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-black text-white hover:bg-emerald-700 transition shadow-xl shadow-emerald-100 flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 size={18} />
+                Confirm Registration
+              </button>
+              <button
+                onClick={() => { setConfirmingStudent(null); setConfirmDiscount(''); }}
+                className="rounded-xl px-6 py-3 bg-slate-100 text-slate-400 font-black hover:bg-slate-200 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {studentPayment && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-[2.5rem] bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-1">Record Fee Payment</h2>
             <p className="text-slate-400 mb-6 text-sm">
-              For <span className="font-bold text-blue-600">{studentPayment.fullName}</span> — {studentPayment.courseSelected}
-              {(() => { 
-                let baseFee = courses.find(c => c.title === studentPayment.courseSelected)?.totalFee;
-                if (!baseFee) return null;
-                const d = Number(paymentForm.discount_amount) || 0;
-                const netFee = Math.max(0, baseFee - d);
-                return (
-                  <span className="ml-2 text-slate-500">
-                    (Course Fee: <strong>₹{netFee}</strong>
-                    {d > 0 ? <span className="text-emerald-500 ml-1 font-bold"> -₹{d} discount</span> : ''})
-                  </span>
-                );
-              })()}
+              For <span className="font-bold text-blue-600">{studentPayment.fullName}</span> "” {studentPayment.courseSelected}
             </p>
             <form onSubmit={handleAddPayment} className="space-y-5">
-              {/* Payment Type Toggle */}
-              <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Type</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['Full', 'Installment 1', 'Installment 2'] as const).map(pt => {
-                    let netFee = courses.find(c => c.title === studentPayment.courseSelected)?.totalFee;
-                    const d = Number(paymentForm.discount_amount) || 0;
-                    if (netFee) netFee = Math.max(0, netFee - d);
-                    let hint = '';
-                    if (pt === 'Full' && netFee) hint = `₹${netFee}`;
-                    else if ((pt === 'Installment 1' || pt === 'Installment 2') && netFee) hint = `₹${Math.round(netFee / 2)}`;
-                    return (
-                      <button
-                        key={pt}
-                        type="button"
-                        onClick={() => {
-                          let netFee2 = courses.find(c => c.title === studentPayment.courseSelected)?.totalFee;
-                          if (netFee2) netFee2 = Math.max(0, netFee2 - d);
-                          setPaymentForm(prev => ({
-                            ...prev,
-                            payment_type: pt,
-                            custom_amount: netFee2 ? String(pt === 'Full' ? netFee2 : Math.round(netFee2 / 2)) : ''
-                          }));
-                        }}
-                        className={`rounded-2xl p-4 border-2 text-sm font-black text-center transition ${
-                          paymentForm.payment_type === pt
-                            ? pt === 'Full' ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                              : 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-slate-100 text-slate-500 hover:border-slate-300'
-                        }`}
-                      >
-                        <div>{pt}</div>
-                        {hint && <div className="text-xs font-medium mt-1 opacity-70">{hint}</div>}
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Flexible Payment Display */}
+              <div className="rounded-3xl bg-slate-50 p-6 space-y-4">
+                {(() => {
+                  const course = courses.find(c => c.title === studentPayment.courseSelected);
+                  const baseFee = course?.totalFee || 0;
+                  const discount = studentPayment.discount_amount || 0;
+                  const netFee = Math.max(0, baseFee - discount);
+                  
+                  const previousPayments = state.status === 'loaded' 
+                    ? state.payments.filter(p => p.registration_id === studentPayment.id)
+                    : [];
+                  const totalPaid = previousPayments.reduce((sum, p) => sum + p.amount_paid, 0);
+                  const balance = Math.max(0, netFee - totalPaid);
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="text-center">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Net Fee</p>
+                          <p className="text-xl font-black text-slate-900">₹{netFee}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Paid</p>
+                          <p className="text-xl font-black text-emerald-600">₹{totalPaid}</p>
+                        </div>
+                      </div>
+                      <div className="pt-4 border-t border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400">Outstanding Balance</p>
+                          <p className="text-2xl font-black text-blue-600">₹{balance}</p>
+                        </div>
+                      </div>
+                      
+                      {previousPayments.length > 0 && (
+                        <div className="pt-4 border-t border-slate-200">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Recent Payments</p>
+                          <div className="space-y-1.5">
+                            {previousPayments.slice(-3).map((p, i) => (
+                              <div key={i} className="flex justify-between text-[11px] font-bold text-slate-600">
+                                <span className="text-slate-400 font-medium">#{p.id} • {new Date(p.date).toLocaleDateString()}</span>
+                                <span className="text-emerald-600">₹{p.amount_paid} ({p.payment_method})</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
-              {/* Discount Amount (Only for Full Payment) */}
-              {paymentForm.payment_type === 'Full' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Apply Discount (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={paymentForm.discount_amount}
-                    onChange={e => {
-                      const newD = Number(e.target.value) || 0;
-                      let base = courses.find(c => c.title === studentPayment.courseSelected)?.totalFee || 0;
-                      setPaymentForm(prev => ({
-                        ...prev,
-                        discount_amount: e.target.value,
-                        custom_amount: base ? String(Math.max(0, base - newD)) : prev.custom_amount
-                      }));
-                    }}
-                    className="w-full rounded-2xl bg-amber-50 border-2 border-amber-100 px-6 py-4 text-xl font-black text-amber-900 focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-500/10 transition"
-                  />
-                  <p className="text-xs text-amber-600 font-bold">Discount will correctly lower the course fee.</p>
-                </div>
-              )}
-
-              {/* Amount */}
+              {/* Amount Input */}
               <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Amount Received (₹)</label>
+                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Amount (₹)</label>
                 <input
                   type="number"
                   required
                   min={1}
+                  placeholder="e.g. 2000"
                   value={paymentForm.custom_amount}
-                  onChange={e => setPaymentForm(prev => ({ ...prev, custom_amount: e.target.value }))}
-                  className="w-full rounded-2xl bg-slate-50 border-2 border-slate-100 px-6 py-4 text-xl font-black text-slate-900 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition"
-                  placeholder="Enter amount"
+                  onChange={e => setPaymentForm({ ...paymentForm, custom_amount: e.target.value })}
+                  className="w-full rounded-xl bg-slate-50 border-2 border-slate-100 px-4 py-2.5 text-base font-black text-slate-900 focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition outline-none"
                 />
               </div>
 
@@ -1562,13 +2048,12 @@ export default function AdminPage() {
                       key={m}
                       type="button"
                       onClick={() => setPaymentForm(prev => ({ ...prev, payment_method: m }))}
-                      className={`rounded-xl py-2.5 px-1 text-xs font-black text-center border-2 transition ${
-                        paymentForm.payment_method === m
+                      className={`rounded-xl py-2.5 px-1 text-[10px] font-black text-center border-2 transition ${paymentForm.payment_method === m
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
                           : 'border-slate-100 text-slate-400 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
-                      {m === 'Cash' ? '💵' : m === 'UPI' ? '📱' : m === 'Bank Transfer' ? '🏦' : m === 'Cheque' ? '📝' : '🏛️'}<br />{m}
+                      {m === 'Cash' ? 'ðŸ’µ' : m === 'UPI' ? 'ðŸ“±' : m === 'Bank Transfer' ? 'ðŸ¦' : m === 'Cheque' ? 'ðŸ“' : 'ðŸ›ï¸'}<br />{m}
                     </button>
                   ))}
                 </div>
@@ -1580,17 +2065,17 @@ export default function AdminPage() {
                 <input
                   type="text"
                   value={paymentForm.remarks}
-                  onChange={e => setPaymentForm(prev => ({ ...prev, remarks: e.target.value }))}
-                  className="w-full rounded-2xl bg-slate-50 border-none px-6 py-3 text-sm font-medium text-slate-900 focus:outline-none"
-                  placeholder="e.g. Concession given, reference number..."
+                  onChange={e => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
+                  className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-medium text-slate-900 focus:outline-none"
+                  placeholder="e.g. Reference number, receipt ID..."
                 />
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 rounded-2xl bg-blue-600 py-4 font-black text-white hover:bg-blue-700 transition shadow-xl shadow-blue-200">
-                  ✅ Confirm & Record
+                <button type="submit" className="flex-1 rounded-2xl bg-blue-600 py-3 text-sm font-black text-white hover:bg-blue-700 transition shadow-xl shadow-blue-200">
+                  âœ… Confirm & Record
                 </button>
-                <button type="button" onClick={() => setStudentPayment(null)} className="rounded-2xl px-6 py-4 bg-slate-100 text-slate-400 font-black hover:bg-slate-200 transition">
+                <button type="button" onClick={() => setStudentPayment(null)} className="rounded-2xl px-6 py-3 bg-slate-100 text-slate-400 font-black hover:bg-slate-200 transition">
                   Cancel
                 </button>
               </div>
@@ -1598,7 +2083,87 @@ export default function AdminPage() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
+       {viewingStudentHistory && (
+         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+           <div className="w-full max-w-2xl rounded-[3rem] bg-white p-8 md:p-12 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
+             <div className="flex items-start justify-between mb-8">
+               <div>
+                 <h2 className="text-2xl font-black text-slate-900">Student Financial History</h2>
+                 <p className="text-slate-500 font-medium mt-1">Detailed records for <span className="text-blue-600 font-bold">{viewingStudentHistory.fullName}</span></p>
+               </div>
+               <button onClick={() => setViewingStudentHistory(null)} className="h-10 w-10 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-100 transition">
+                 <Plus size={20} className="rotate-45" />
+               </button>
+             </div>
 
+             {(() => {
+               const course = courses.find(c => c.title === viewingStudentHistory.courseSelected);
+               const baseFee = course?.totalFee || 0;
+               const discount = viewingStudentHistory.discount_amount || 0;
+               const netFee = Math.max(0, baseFee - discount);
+               const studentPayments = state.status === 'loaded' 
+                 ? state.payments.filter(p => p.registration_id === viewingStudentHistory.id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                 : [];
+               const totalPaid = studentPayments.reduce((s, p) => s + p.amount_paid, 0);
+               const balance = Math.max(0, netFee - totalPaid);
+
+               return (
+                 <div className="space-y-8">
+                   <div className="grid grid-cols-3 gap-4 rounded-2xl bg-slate-50 p-6">
+                     <div className="text-center">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Course Fee</p>
+                       <p className="text-lg font-black text-slate-900">₹{netFee}</p>
+                     </div>
+                     <div className="text-center border-x border-slate-200">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Paid</p>
+                       <p className="text-lg font-black text-emerald-600">₹{totalPaid}</p>
+                     </div>
+                     <div className="text-center">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Balance</p>
+                       <p className={`text-lg font-black ${balance > 0 ? 'text-blue-600' : 'text-slate-300'}`}>₹{balance}</p>
+                     </div>
+                   </div>
+
+                   <div className="space-y-4">
+                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Transaction History</h3>
+                     {studentPayments.length === 0 ? (
+                       <p className="text-center py-8 text-slate-400 font-medium italic">No payments recorded yet.</p>
+                     ) : (
+                       <div className="space-y-3">
+                         {studentPayments.map(p => (
+                           <div key={p.id} className="flex items-center justify-between p-4 rounded-2xl bg-white border border-slate-100 shadow-sm hover:border-blue-200 transition-colors">
+                             <div className="flex items-center gap-4">
+                               <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-xs">
+                                 #{p.id}
+                               </div>
+                               <div>
+                                 <p className="font-bold text-slate-900">₹{p.amount_paid}</p>
+                                 <p className="text-[10px] text-slate-400 font-medium">{new Date(p.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} • {p.payment_method}</p>
+                               </div>
+                             </div>
+                             <div className="text-right">
+                               <p className="text-[10px] font-bold text-slate-400 italic max-w-[150px] truncate">{p.remarks || '-'}</p>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </div>
+                   
+                   <button 
+                     onClick={() => setViewingStudentHistory(null)}
+                     className="w-full rounded-2xl bg-slate-900 py-4 font-black text-white hover:bg-slate-800 transition shadow-xl shadow-slate-200"
+                   >
+                     Done
+                   </button>
+                 </div>
+               );
+             })()}
+           </div>
+         </div>
+        )}
+      </div>
+    )}
+  </div>
+)
+}

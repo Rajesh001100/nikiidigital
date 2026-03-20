@@ -168,7 +168,7 @@ const registrations = [
     highestQualification: "UG & PG (Any Degree)",
     schoolCollegeName: "JKKMCT",
     yearOfStudy: "B.Tech-IT and II-Year",
-    mobileNumber: "+918015599681",
+    mobileNumber: "+919750534434",
     preferredBatchTime: "Batch - I (9.30am - 11.30am)",
     courseSelected: "Junior Computer Application (JCA)",
     howDidYouHear: "Friends / Relatives",
@@ -187,7 +187,7 @@ const registrations = [
     highestQualification: "UG & PG (Any Degree)",
     schoolCollegeName: "JKKMCT",
     yearOfStudy: "II-Year - B.Tech-it",
-    mobileNumber: "+918015599681",
+    mobileNumber: "+919750534434",
     preferredBatchTime: "Batch - I (9.30am - 11.30am)",
     courseSelected: "Kids Computer Application (KCA)",
     howDidYouHear: "WhatsApp",
@@ -228,7 +228,7 @@ const settings = [
   { key: 'promoCodes', value: [
     { code: 'SUMMER50', discount: '50%', description: 'Summer Special Discount' }
   ]},
-  { key: 'contactNumber', value: '+91 80155 99681' },
+  { key: 'contactNumber', value: '+91 97505 34434' },
   { key: 'address', value: 'Near Anthiyur Bus Stand, Anthiyur' }
 ];
 

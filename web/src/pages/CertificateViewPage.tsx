@@ -166,34 +166,35 @@ export default function CertificateViewPage() {
 
   return (
     <div className="max-w-4xl mx-auto py-12 px-6">
-      <div className="mb-10 flex flex-wrap items-center justify-between gap-6">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-             <CheckCircle2 className="text-emerald-500" size={32} />
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
+             <CheckCircle2 className="text-emerald-500 shrink-0" size={28} />
              Congratulations, {state.data.fullName}!
           </h1>
-          <p className="text-slate-500 font-medium mt-1">Your official digital certificate is ready for your records.</p>
+          <p className="text-slate-500 font-medium mt-1 text-sm">Your official digital certificate is ready for your records.</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-3">
           <button 
             onClick={downloadCertificate}
-            className="flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white shadow-xl shadow-blue-200 hover:bg-blue-700 transition"
+            className="flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-xl shadow-blue-200 hover:bg-blue-700 transition"
           >
-            <Download size={20} />
+            <Download size={18} />
             Download PDF
           </button>
           <button 
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 rounded-2xl bg-slate-100 px-6 py-3 font-bold text-slate-600 hover:bg-slate-200 transition"
+            className="flex items-center gap-2 rounded-2xl bg-slate-100 px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 transition"
           >
-            <Home size={20} />
+            <Home size={18} />
             Home
           </button>
         </div>
       </div>
 
-      {/* Certificate Visual Preview (Non-printable version for UI) */}
-      <div className="relative overflow-hidden rounded-[3rem] border-8 border-slate-100 bg-white p-12 shadow-2xl md:p-20 text-center landscape-certificate min-h-[600px] flex flex-col justify-center">
+      {/* Certificate Visual Preview - horizontally scrollable on very small screens */}
+      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+      <div className="relative overflow-hidden rounded-[2rem] md:rounded-[3rem] border-4 md:border-8 border-slate-100 bg-white p-6 sm:p-10 md:p-20 shadow-2xl text-center landscape-certificate min-h-[400px] md:min-h-[600px] flex flex-col justify-center" style={{minWidth: '320px'}}>
         {/* Subtle Watermark */}
         <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
            <div className="text-[15rem] font-bold rotate-12">NCA</div>
@@ -204,19 +205,19 @@ export default function CertificateViewPage() {
         <div className="absolute inset-6 rounded-[2.2rem] border border-blue-600/10 pointer-events-none" />
 
         <div className="relative z-10">
-          <div className="mb-10">
-            <h2 className="text-4xl md:text-5xl font-black text-blue-900 tracking-tighter">NiKii Computer Academy</h2>
+          <div className="mb-6 md:mb-10">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-blue-900 tracking-tighter">NiKii Computer Academy</h2>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mt-2">An ISO 9001:2015 Certified Institution</p>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mt-1">State and Central Certified Academy • Anthiyur</p>
           </div>
 
-          <div className="mb-10">
-            <h3 className="text-5xl md:text-7xl font-serif italic font-bold text-amber-600 tracking-tight">Certificate of Achievement</h3>
+          <div className="mb-6 md:mb-10">
+            <h3 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-serif italic font-bold text-amber-600 tracking-tight">Certificate of Achievement</h3>
             <p className="mt-8 text-xl text-slate-500 font-medium">This is to certify that</p>
           </div>
 
-          <div className="mb-10">
-            <h4 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tight">
+          <div className="mb-6 md:mb-10">
+            <h4 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-black text-slate-900 tracking-tight">
               {state.data.fullName}
             </h4>
             <p className="mt-8 text-xl text-slate-500 font-medium">has successfully completed the professional program in</p>
@@ -249,11 +250,12 @@ export default function CertificateViewPage() {
             </div>
           </div>
 
-          <div className="mt-12 text-[10px] font-bold text-slate-300 uppercase tracking-widest flex justify-between px-10">
+          <div className="mt-6 text-[9px] sm:text-[10px] font-bold text-slate-300 uppercase tracking-widest flex flex-col sm:flex-row justify-between items-center gap-1 px-4 sm:px-10">
              <span>Cert No: CERT-{id}-{new Date(state.data.createdAt).getFullYear()}</span>
-             <span>Verification: nikiidigital.in/certificate/{id}</span>
+             <span className="text-center">Verification: nikiidigital.in/certificate/{id}</span>
           </div>
         </div>
+      </div>
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
