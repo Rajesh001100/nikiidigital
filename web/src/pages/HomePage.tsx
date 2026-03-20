@@ -652,7 +652,7 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  <div className="pt-4 flex justify-center">
+                  <div className="pt-4 flex flex-col items-center">
                     <button
                       type="submit"
                       disabled={form.formState.isSubmitting}
