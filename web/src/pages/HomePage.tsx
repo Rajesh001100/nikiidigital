@@ -213,11 +213,10 @@ export default function HomePage() {
                 <h4 className="text-sm font-black text-slate-900">{statusResult.courseSelected}</h4>
                 <p className="text-xs font-bold text-slate-400">Student: {statusResult.fullName}</p>
               </div>
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl shadow-sm shrink-0 ${
-                statusResult.status === 'Confirmed' ? 'bg-emerald-500 text-white shadow-emerald-200' :
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl shadow-sm shrink-0 ${statusResult.status === 'Confirmed' ? 'bg-emerald-500 text-white shadow-emerald-200' :
                 statusResult.status === 'Rejected' ? 'bg-red-500 text-white shadow-red-200' :
-                'bg-amber-500 text-white shadow-amber-200 animate-pulse'
-              }`}>
+                  'bg-amber-500 text-white shadow-amber-200 animate-pulse'
+                }`}>
                 {statusResult.status === 'Confirmed' ? <CheckCircle2 size={16} /> :
                   statusResult.status === 'Rejected' ? <XCircle size={16} /> : <Clock size={16} />}
                 <span className="text-sm font-black uppercase tracking-tight">{statusResult.status}</span>
@@ -628,26 +627,26 @@ export default function HomePage() {
                     {form.watch('paymentMode') === 'Online Mode' && (
                       <div className="mt-6 rounded-2xl bg-white border border-emerald-100 p-6 shadow-sm overflow-hidden relative animate-in fade-in slide-in-from-top-4 duration-500">
                         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                            <i className="bi bi-qr-code text-8xl"></i>
+                          <i className="bi bi-qr-code text-8xl"></i>
                         </div>
                         <h4 className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
-                           <ShieldCheck size={16} /> Online Payment Details
+                          <ShieldCheck size={16} /> Online Payment Details
                         </h4>
-                        
+
                         <div className="flex flex-col md:flex-row gap-6 items-center relative z-10">
-                            <div className="shrink-0 p-2 bg-white rounded-xl shadow-md border border-slate-100">
-                                <img src="/paymentqr.png" alt="Payment QR Code" className="w-32 h-32 md:w-36 md:h-36 object-contain" />
+                          <div className="shrink-0 p-2 bg-white rounded-xl shadow-md border border-slate-100">
+                            <img src="/paymentqr.png" alt="Payment QR Code" className="w-32 h-32 md:w-36 md:h-36 object-contain" />
+                          </div>
+                          <div className="space-y-4 flex-1 text-center md:text-left">
+                            <div>
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Scan QR or use UPI ID</p>
+                              <p className="text-lg md:text-xl font-black text-slate-900 select-all tracking-wide">97509344434-2@okbizaxis</p>
                             </div>
-                            <div className="space-y-4 flex-1 text-center md:text-left">
-                                <div>
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Scan QR or use UPI ID</p>
-                                    <p className="text-lg md:text-xl font-black text-slate-900 select-all tracking-wide">97509344434-2@okbizaxis</p>
-                                </div>
-                                <div className="bg-amber-50 border border-amber-100 text-amber-700 p-3 rounded-xl text-xs sm:text-sm font-semibold leading-relaxed text-left">
-                                    <span className="flex items-center gap-1.5 mb-1 text-amber-800 font-bold"><AlertCircle size={14} /> Attention</span>
-                                    Please verify with the admin mobile number (+91 9750534434) before making an online payment for instant confirmation.
-                                </div>
+                            <div className="bg-amber-50 border border-amber-100 text-amber-700 p-3 rounded-xl text-xs sm:text-sm font-semibold leading-relaxed text-left">
+                              <span className="flex items-center gap-1.5 mb-1 text-amber-800 font-bold"><AlertCircle size={14} /> Attention</span>
+                              Please verify with the admin mobile number (+91 9750534434) before making an online payment for instant confirmation.
                             </div>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -708,7 +707,7 @@ export default function HomePage() {
                 icon: 'bi-envelope-at-fill',
                 color: 'bg-slate-900',
                 title: 'Official Email',
-                lines: ['nikiicomputeracademmy@gmail.com']
+                lines: ['nikiiacademy@gmail.com']
               },
             ].map((item, idx) => (
               <div key={idx} className="group flex flex-col items-center text-center gap-4 rounded-[2rem] bg-white p-8 shadow-sm border border-slate-100 transition-all hover:shadow-xl hover:-translate-y-1">
@@ -717,7 +716,7 @@ export default function HomePage() {
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">{item.title}</h3>
-                  <div className="text-slate-900 font-bold leading-relaxed text-sm">
+                  <div className="text-slate-900 font-black leading-relaxed text-lg">
                     {item.lines.map((line, i) => <p key={i}>{line}</p>)}
                   </div>
                 </div>
