@@ -163,12 +163,12 @@ export default function StaffPage() {
             type="password"
             value={staffKey}
             onChange={e => setStaffKey(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { localStorage.setItem(STAFF_KEY_LS, staffKey); void load(staffKey) } }}
+            onKeyDown={e => { if (e.key === 'Enter') { const k = staffKey.trim(); setStaffKey(k); localStorage.setItem(STAFF_KEY_LS, k); void load(k) } }}
             placeholder="Enter Staff Access Key"
             className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-lg font-medium outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition shadow-sm"
           />
           <button
-            onClick={() => { localStorage.setItem(STAFF_KEY_LS, staffKey); void load(staffKey) }}
+            onClick={() => { const k = staffKey.trim(); setStaffKey(k); localStorage.setItem(STAFF_KEY_LS, k); void load(k) }}
             className="rounded-2xl bg-emerald-600 px-8 py-4 font-bold text-white hover:bg-emerald-700 transition"
           >
             Authenticate

@@ -22,6 +22,12 @@ const ADMIN_KEY = (process.env.ADMIN_KEY ?? "nikiidigital-admin").trim();
 const STAFF_KEY = (process.env.STAFF_KEY ?? "nikiidigital-staff").trim();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+console.log("-----------------------------------------");
+console.log("🔑 Authentication Keys Loaded:");
+console.log(`   Admin Key: [${ADMIN_KEY.length > 0 ? ADMIN_KEY[0] + '...' + ADMIN_KEY.slice(-1) : 'MISSING'}] (Length: ${ADMIN_KEY.length})`);
+console.log(`   Staff Key: [${STAFF_KEY.length > 0 ? STAFF_KEY[0] + '...' + STAFF_KEY.slice(-1) : 'MISSING'}] (Length: ${STAFF_KEY.length})`);
+console.log("-----------------------------------------");
+
 const app = express();
 
 // --- WhatsApp Notification Helper (Example using CallMeBot or similar) ---
@@ -97,18 +103,23 @@ app.use("/api/", globalLimiter);
 
 // --- AUTH MIDDLEWARE ---
 const verifyAdmin = (req: any, res: any, next: any) => {
-  const adminKey = req.headers['x-admin-key'];
-  if (adminKey === ADMIN_KEY) {
+  const adminKeyHeader = req.headers['x-admin-key'];
+  const key = typeof adminKeyHeader === 'string' ? adminKeyHeader.trim() : '';
+
+  if (key === ADMIN_KEY) {
     req.isAdmin = true;
     next();
   } else {
+    console.warn(`Auth: Admin login attempt failed. Header: ${!!key}`);
     res.status(401).json({ error: "Unauthorized access detected." });
   }
 };
 
 // Accepts admin OR staff key
 const verifyStaff = (req: any, res: any, next: any) => {
-  const key = req.headers['x-admin-key'];
+  const adminKeyHeader = req.headers['x-admin-key'];
+  const key = typeof adminKeyHeader === 'string' ? adminKeyHeader.trim() : '';
+
   if (key === ADMIN_KEY) {
     req.isAdmin = true;
     next();
@@ -116,6 +127,7 @@ const verifyStaff = (req: any, res: any, next: any) => {
     req.isAdmin = false;
     next();
   } else {
+    console.warn(`Auth: Staff login attempt failed. Header: ${!!key}`);
     res.status(401).json({ error: "Unauthorized access detected." });
   }
 };

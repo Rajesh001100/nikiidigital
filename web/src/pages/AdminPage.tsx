@@ -627,12 +627,12 @@ export default function AdminPage() {
             type="password"
             value={adminKey}
             onChange={(e) => setAdminKey(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { localStorage.setItem(STORAGE_KEY, adminKey); void load(adminKey) } }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { const k = adminKey.trim(); setAdminKey(k); localStorage.setItem(STORAGE_KEY, k); void load(k) } }}
             placeholder="Enter Admin Access Key"
             className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-lg font-medium outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition shadow-sm"
           />
           <button
-            onClick={() => { localStorage.setItem(STORAGE_KEY, adminKey); void load(adminKey) }}
+            onClick={() => { const k = adminKey.trim(); setAdminKey(k); localStorage.setItem(STORAGE_KEY, k); void load(k) }}
             className="rounded-2xl bg-slate-900 px-8 py-4 font-bold text-white hover:bg-slate-800 transition"
           >
             Authenticate
