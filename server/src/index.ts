@@ -41,15 +41,20 @@ async function sendWhatsAppNotification(toMobile: string, message: string) {
       return;
     }
 
-    // Clean mobile number
-    const cleanNumber = toMobile.replace(/\D/g, '');
     const url = `https://api.ultramsg.com/${instanceId}/messages/chat`;
 
-    console.log(`Attempting to send WhatsApp via UltraMsg to ${cleanNumber}...`);
+    // Normalizing number to +91XXXXXXXXXX format
+    let cleanNumber = toMobile.replace(/\D/g, '');
+    if (cleanNumber.length === 10) {
+      cleanNumber = "91" + cleanNumber;
+    }
+    const finalNumber = "+" + cleanNumber;
+
+    console.log(`[WhatsApp] Dispatching message to ${finalNumber}...`);
 
     const params = new URLSearchParams();
     params.append("token", token);
-    params.append("to", cleanNumber);
+    params.append("to", finalNumber);
     params.append("body", message);
 
     const resp = await fetch(url, {
@@ -59,10 +64,12 @@ async function sendWhatsAppNotification(toMobile: string, message: string) {
     });
 
     const result = await resp.json() as any;
+    console.log(`[WhatsApp] UltraMsg API Response for ${finalNumber}:`, JSON.stringify(result, null, 2));
+
     if (result.sent === "true" || result.id) {
-      console.log("✅ WhatsApp notification sent successfully!");
+      console.log(`✅ WhatsApp notification sent successfully to ${finalNumber}!`);
     } else {
-      console.error("❌ UltraMsg API Error:", result);
+      console.error(`❌ UltraMsg API Error for ${finalNumber}:`, result);
     }
   } catch (err) {
     console.error("WhatsApp notification error:", err);
@@ -305,6 +312,9 @@ app.get("/api/initial-data", async (req, res) => {
 
 const RegistrationInput = z.object({
   fullName: z.string().min(2).max(100),
+  fatherName: z.string().optional().nullable(),
+  religion: z.string().optional().nullable(),
+  nationality: z.string().optional().nullable(),
   email: z.string().email().max(200),
   gender: z.string().min(1),
   dateOfBirth: z.string().min(1),
@@ -365,6 +375,8 @@ const SettingsInput = z.object({
   })),
   contactNumber: z.string(),
   address: z.string(),
+  academicYears: z.array(z.string()).optional(),
+  currentAcademicYear: z.string().optional()
 });
 
 app.post("/api/registrations", registrationLimiter, async (req, res) => {
@@ -382,10 +394,18 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
   const normalizedMobile = parsed.data.mobileNumber.replace(/\D/g, '').slice(-10);
 
   try {
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    let currentAcademicYear = '2026-2027'; // default
+    if (settingsData) {
+      const s = settingsData.reduce((acc: any, item: any) => ({...acc, [item.key]: item.value}), {});
+      if (s.currentAcademicYear) currentAcademicYear = s.currentAcademicYear;
+    }
+
     const { data, error } = await supabase
       .from('registrations')
       .insert({
         ...parsed.data,
+        academic_year: currentAcademicYear,
         mobileNumber: normalizedMobile,
         status: 'Pending',
         createdAt
@@ -398,10 +418,10 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
     // --- Auto-Email Notification (Resend) ---
     try {
       if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "re_your_api_key") {
-        await resend.emails.send({
+        const { data: resData, error: resError } = await resend.emails.send({
           from: 'NiKii Digital <onboarding@resend.dev>',
-          to: parsed.data.email,
-          subject: 'Registration Successful - NiKii Computer Academy',
+          to: 'rajeshrcb1817@gmail.com', // Overridden for Resend Sandbox restrictions (originally parsed.data.email)
+          subject: `Registration Successful - ${parsed.data.fullName} - NiKii Computer Academy`,
           html: `
             <div style="font-family: sans-serif; padding: 20px; color: #333;">
               <h1 style="color: #2563eb;">Welcome to NiKii Digital!</h1>
@@ -414,6 +434,8 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
             </div>
           `
         });
+        if (resError) console.error("Resend API Error (Student Email):", resError);
+        else console.log("Student Email dispatched successfully:", resData);
       }
     } catch (emailErr) {
       console.error("Email failed to send:", emailErr);
@@ -421,7 +443,7 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
 
     // --- Auto-WhatsApp Notification to Student ---
     await sendWhatsAppNotification(
-      parsed.data.mobileNumber,
+      normalizedMobile,
       `🌟 *Welcome to NiKii Computer Academy!* 🌟\n\nDear *${parsed.data.fullName}*,\n\nThank you for registering! Your application has been received successfully. 📝\n\n📌 *Registration Details:*\n--------------------------\n🆔 *Ref ID:* #REG-${data.id.toString().padStart(4, '0')}\n🎓 *Course:* ${parsed.data.courseSelected}\n⏰ *Batch:* ${parsed.data.preferredBatchTime}\n--------------------------\n\nOur team will contact you shortly regarding your next steps. 🤝\n\n📍 *Visit us:* Near Anthiyur Bus Stand, Anthiyur.\n📞 *Call:* +91 80155 99681\n\n*Education is the Power of Life!* 🚀`
     );
 
@@ -431,9 +453,9 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
 
     if (adminEmail) {
       try {
-        await resend.emails.send({
+        const { data: adminRes, error: adminErr } = await resend.emails.send({
           from: 'NiKii Alerts <onboarding@resend.dev>',
-          to: adminEmail,
+          to: 'rajeshrcb1817@gmail.com', // Overridden for Resend Sandbox restrictions (originally adminEmail)
           subject: '🔥 New Registration Received!',
           html: `
             <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
@@ -449,6 +471,8 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
             </div>
           `
         });
+        if (adminErr) console.error("Admin Email API Error:", adminErr);
+        else console.log("Admin Email dispatched successfully.", adminRes);
       } catch (e) { console.error("Admin email alert failed:", e); }
     }
 
@@ -486,10 +510,11 @@ app.delete("/api/registrations", verifyAdmin, async (req: any, res: any) => {
 
 app.get("/api/registrations", verifyStaff, async (req: any, res: any) => {
   try {
-    const { data, error } = await supabase
-      .from('registrations')
-      .select('*')
-      .order('createdAt', { ascending: false });
+    let query = supabase.from('registrations').select('*').order('createdAt', { ascending: false });
+    if (req.query.academicYear) {
+      query = query.eq('academic_year', req.query.academicYear);
+    }
+    const { data, error } = await query;
     if (error) throw error;
     res.json({ registrations: data });
   } catch (err) {
@@ -770,10 +795,15 @@ app.post("/api/settings", verifyAdmin, async (req: any, res: any) => {
 // --- Payments & Materials Management ---
 app.get("/api/admin/payments", verifyStaff, async (req: any, res: any) => {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('payments')
-      .select('*, registrations(fullName, mobileNumber, courseSelected)')
+      .select('*, registrations!inner(academic_year, fullName, mobileNumber, courseSelected)')
       .order('date', { ascending: false });
+      
+    if (req.query.academicYear) {
+      query = query.eq('registrations.academic_year', req.query.academicYear);
+    }
+    const { data, error } = await query;
     if (error) throw error;
 
     // Compute summary stats
@@ -871,13 +901,49 @@ app.delete("/api/admin/materials/:id", verifyAdmin, async (req: any, res: any) =
 // --- Attendance Management ---
 
 app.get("/api/attendance", verifyStaff, async (req: any, res: any) => {
-  const { date, batchTime } = req.query;
+  const { date, batchTime, academicYear } = req.query;
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('attendance')
-      .select('registration_id, status')
+      .select('registration_id, status, registrations!inner(academic_year)')
       .eq('date', date);
+      
+    if (academicYear) {
+      query = query.eq('registrations.academic_year', academicYear);
+    }
+    const { data, error } = await query;
+
+    if (error) throw error;
+    res.json({ attendance: data });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.get("/api/attendance/monthly", verifyStaff, async (req: any, res: any) => {
+  const { month, academicYear } = req.query; // "YYYY-MM"
+
+  try {
+    const startDate = `${month}-01`;
+    // get last day of the month
+    const year = parseInt(month.substring(0, 4));
+    const m = parseInt(month.substring(5, 7));
+    const expectedDays = new Date(year, m, 0).getDate();
+    const endDate = `${month}-${expectedDays}`;
+
+    let query = supabase
+      .from('attendance')
+      .select('registration_id, date, status, registrations!inner(academic_year)')
+      .gte('date', startDate)
+      .lte('date', endDate);
+      
+    if (academicYear) {
+      query = query.eq('registrations.academic_year', academicYear);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
     res.json({ attendance: data });
@@ -909,9 +975,9 @@ app.post("/api/attendance", verifyStaff, async (req: any, res: any) => {
 app.get("/api/dashboard-stats", verifyAdmin, async (req: any, res: any) => {
 
   try {
-    const { data: regs, error } = await supabase
-      .from('registrations')
-      .select('courseSelected, createdAt');
+    let query = supabase.from('registrations').select('courseSelected, createdAt');
+    if (req.query.academicYear) query = query.eq('academic_year', req.query.academicYear);
+    const { data: regs, error } = await query;
 
     if (error) throw error;
 
@@ -940,10 +1006,9 @@ app.get("/api/dashboard-stats", verifyAdmin, async (req: any, res: any) => {
 app.get("/api/registrations.csv", verifyAdmin, async (req: any, res: any) => {
 
   try {
-    const { data: rows, error } = await supabase
-      .from('registrations')
-      .select('*')
-      .order('createdAt', { ascending: false });
+    let query = supabase.from('registrations').select('*').order('createdAt', { ascending: false });
+    if (req.query.academicYear) query = query.eq('academic_year', req.query.academicYear);
+    const { data: rows, error } = await query;
 
     if (error) throw error;
 
@@ -978,10 +1043,15 @@ app.get("/api/registrations.csv", verifyAdmin, async (req: any, res: any) => {
 
 app.get("/api/admin/payments.csv", verifyAdmin, async (req: any, res: any) => {
   try {
-    const { data: rows, error } = await supabase
+    let query = supabase
       .from('payments')
-      .select('*, registrations(fullName, mobileNumber, preferredBatchTime, courseSelected)')
+      .select('*, registrations!inner(academic_year, fullName, mobileNumber, preferredBatchTime, courseSelected)')
       .order('date', { ascending: false });
+      
+    if (req.query.academicYear) {
+      query = query.eq('registrations.academic_year', req.query.academicYear);
+    }
+    const { data: rows, error } = await query;
 
     if (error) throw error;
 
@@ -1023,8 +1093,13 @@ app.get("/api/admin/payments.csv", verifyAdmin, async (req: any, res: any) => {
 
 app.get("/api/admin/analytics", verifyAdmin, async (req: any, res: any) => {
   try {
-    const { data: regs, error } = await supabase.from('registrations').select('createdAt, courseSelected, status');
-    const { data: payments, error: pError } = await supabase.from('payments').select('amount_paid, date');
+    let rQuery = supabase.from('registrations').select('createdAt, courseSelected, status');
+    if (req.query.academicYear) rQuery = rQuery.eq('academic_year', req.query.academicYear);
+    const { data: regs, error } = await rQuery;
+
+    let pQuery = supabase.from('payments').select('amount_paid, date, registrations!inner(academic_year)');
+    if (req.query.academicYear) pQuery = pQuery.eq('registrations.academic_year', req.query.academicYear);
+    const { data: payments, error: pError } = await pQuery;
 
     if (error || pError) throw error || pError;
 
@@ -1135,8 +1210,8 @@ app.post("/api/registrations/:id/certificate-notify", verifyAdmin, async (req: a
     try {
       if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "re_your_api_key") {
         await resend.emails.send({
-          from: 'NiKii Academy <certificates@resend.dev>',
-          to: reg.email,
+          from: 'NiKii Academy <onboarding@resend.dev>',
+          to: 'rajeshrcb1817@gmail.com', // Overridden for Resend Sandbox restrictions (originally reg.email)
           subject: `Congratulations! Your Certificate is Ready - ${reg.courseSelected}`,
           html: `
             <div style="font-family: sans-serif; padding: 30px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px; margin: 0 auto;">

@@ -27,11 +27,13 @@ export default function StaffPage() {
   // Attendance state
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedBatch, setSelectedBatch] = useState('Batch - I (9.30am - 11.30am)')
+  const [selectedYear, setSelectedYear] = useState('')
+
 
   // Payment form state
   const [studentPayment, setStudentPayment] = useState<RegistrationRow | null>(null)
   const [payForm, setPayForm] = useState({
-    payment_method: 'Cash' as 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'DD',
+    payment_method: 'Cash' as 'Cash' | 'UPI',
     custom_amount: '',
     remarks: '',
   })
@@ -58,12 +60,15 @@ export default function StaffPage() {
     setState({ status: 'loading' })
     setIsRefreshing(true)
     try {
-      const [r, p, att, c, sett] = await Promise.all([
-        getRegistrations(key),
-        getAdminPayments(key),
-        getAttendance(key, attendanceDate),
-        getCourses(),
-        getSettings()
+      const sett = await getSettings();
+      const activeYear = (sett as any).currentAcademicYear || '2026-2027';
+      setSelectedYear(activeYear);
+
+      const [r, p, att, c] = await Promise.all([
+        getRegistrations(key, activeYear),
+        getAdminPayments(key, activeYear),
+        getAttendance(key, attendanceDate, activeYear),
+        getCourses()
       ])
       setState({ status: 'loaded', rows: r.registrations, payments: p.payments, attendance: att.attendance, courses: c.courses, settings: sett })
     } catch (e: any) {
@@ -79,21 +84,81 @@ export default function StaffPage() {
 
   // Reload attendance when date changes
   useEffect(() => {
-    if (state.status === 'loaded') {
-      getAttendance(staffKey, attendanceDate)
+    if (state.status === 'loaded' && selectedYear && staffKey) {
+      getAttendance(staffKey, attendanceDate, selectedYear)
         .then(att => setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s))
         .catch(() => {})
     }
-  }, [attendanceDate])
+  }, [attendanceDate, selectedYear])
 
-  async function handleAttendanceToggle(registrationId: number, currentStatus: string) {
-    const newStatus = currentStatus === 'Present' ? 'Absent' : 'Present'
+  // Security Guards: Anti-Screenshot, Anti-Copy, Anti-F12
+  useEffect(() => {
+    if (!staffKey) return;
+    
+    const handleContext = (e: MouseEvent) => e.preventDefault();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === 'F12' || 
+        e.key === 'PrintScreen' || 
+        (e.ctrlKey && (e.key === 'p' || e.key === 's' || e.key === 'u' || e.key === 'c' || e.key === 'i' || e.key === 'x' || e.key === 'v')) ||
+        (e.ctrlKey && e.shiftKey && e.key === 'I') ||
+        (e.metaKey && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === '5')) // Mac Screenshots
+      ) {
+        e.preventDefault();
+        return false;
+      }
+    };
+    const handleFocus = () => document.body.classList.remove('blur-md');
+    const handleBlur = () => document.body.classList.add('blur-md');
+    const handleCopy = (e: ClipboardEvent) => { e.preventDefault(); alert("Copying is disabled.") };
+
+    window.addEventListener('contextmenu', handleContext);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('cut', handleCopy);
+    document.addEventListener('selectstart', (e) => e.preventDefault());
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContext);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('cut', handleCopy);
+      document.body.classList.remove('blur-md');
+    };
+  }, [staffKey]);
+
+  async function handleAttendanceSet(registrationId: number, newStatus: string) {
+    // Optimistic Update
+    setState(s => {
+      if (s.status !== 'loaded') return s
+      const newAttendance = [...s.attendance]
+      const idx = newAttendance.findIndex(a => a.registration_id === registrationId && a.date === attendanceDate)
+      if (idx !== -1) {
+        newAttendance[idx] = { ...newAttendance[idx], status: newStatus }
+      } else {
+        newAttendance.push({
+          registration_id: registrationId,
+          date: attendanceDate,
+          status: newStatus
+        })
+      }
+      return { ...s, attendance: newAttendance }
+    })
+
     try {
       await updateAttendance(staffKey, attendanceDate, [{ registrationId, status: newStatus }])
-      const att = await getAttendance(staffKey, attendanceDate)
+      // Refetch in background to ensure consistency
+      const att = await getAttendance(staffKey, attendanceDate, selectedYear)
       setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s)
     } catch {
       alert('Attendance update failed')
+      // Refetch on failure to revert
+      const att = await getAttendance(staffKey, attendanceDate, selectedYear)
+      setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s)
     }
   }
 
@@ -143,8 +208,8 @@ export default function StaffPage() {
   const batchRegs = confirmedRegs.filter(r => r.preferredBatchTime === selectedBatch)
 
   function getAttStatus(regId: number) {
-    const found = attendance.find(a => a.registration_id === regId)
-    return found?.status ?? 'Present'
+    const found = attendance.find(a => a.registration_id === regId && a.date === attendanceDate)
+    return found?.status ?? null
   }
 
   // ── Login Screen ────────────────────────────────────────────────────────────
@@ -203,13 +268,17 @@ export default function StaffPage() {
   }
 
   return (
-    <div className="space-y-6 md:space-y-8 pb-20">
+    <div className="select-none space-y-6 md:space-y-8 pb-20">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="flex flex-wrap items-start md:items-center justify-between gap-4 md:gap-6">
         <div>
           <h1 className="text-2xl md:text-4xl font-black text-slate-900 tracking-tight">Staff Dashboard</h1>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex flex-wrap items-center gap-3 mt-2">
             <p className="text-slate-500 font-medium italic text-sm">NiKii Computer Academy</p>
+            <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-3 py-1 border border-emerald-100">
+              <span className="text-[10px] font-black tracking-widest uppercase text-emerald-600">Active Year:</span>
+              <span className="text-sm font-black text-emerald-700">{selectedYear}</span>
+            </div>
             <button
               onClick={() => void load()}
               className="text-emerald-600 hover:text-emerald-800 p-1 transition-colors"
@@ -337,63 +406,92 @@ export default function StaffPage() {
       {/* ── ATTENDANCE TAB ──────────────────────────────────────────────────── */}
       {activeTab === 'attendance' && (
         <div className="space-y-6">
-          <div className="flex flex-wrap gap-4 items-center">
-            <div className="space-y-1">
-              <label className="text-xs font-black uppercase tracking-widest text-slate-400">Date</label>
-              <input
-                type="date"
-                value={attendanceDate}
-                onChange={e => setAttendanceDate(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition"
-              />
+          <div className="flex flex-col md:flex-row gap-6 items-start md:items-end justify-between w-full rounded-3xl bg-white p-6 shadow-sm border border-slate-100">
+            <div>
+              <h2 className="text-xl font-black text-slate-900">Attendance</h2>
+              <p className="text-sm font-bold text-slate-400 mt-1">Record daily attendance here.</p>
             </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-xs font-black uppercase tracking-widest text-slate-400">Batch</label>
-              <select
-                value={selectedBatch}
-                onChange={e => setSelectedBatch(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition"
-              >
-                {batches.map((b: string) => <option key={b} value={b}>{b}</option>)}
-              </select>
+            
+            <div className="flex flex-wrap items-end gap-6 w-full md:w-auto">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Batch</label>
+                  <select
+                    value={selectedBatch}
+                    onChange={e => setSelectedBatch(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition"
+                  >
+                    {batches.map((b: string) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-3xl border border-slate-100 bg-white shadow-sm overflow-hidden print:hidden block">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <p className="font-bold text-slate-900">{selectedBatch}</p>
-              <p className="text-xs font-bold text-slate-400">{new Date(attendanceDate).toLocaleDateString('en-IN', { dateStyle: 'full' })}</p>
+              
+              <div className="flex items-center gap-3 bg-slate-50/50 p-1.5 pr-2 rounded-2xl border border-slate-100">
+                <label className="text-[10px] pl-3 font-black uppercase tracking-widest text-slate-400">Record Date</label>
+                <input
+                  type="date"
+                  value={attendanceDate}
+                  onChange={e => setAttendanceDate(e.target.value)}
+                  className="rounded-xl bg-white border border-slate-200 px-4 py-1.5 text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition cursor-pointer"
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
             </div>
             {batchRegs.length === 0 ? (
               <div className="py-12 text-center text-slate-400 font-medium">No confirmed students in this batch.</div>
             ) : (
               <div className="divide-y divide-slate-50">
                 {batchRegs.map(reg => {
-                  const status = getAttStatus(reg.id)
-                  const isPresent = status === 'Present'
                   return (
                     <div key={reg.id} className="flex items-center justify-between px-6 py-4 hover:bg-slate-50/50 transition-colors">
                       <div>
                         <p className="font-bold text-slate-900">{reg.fullName}</p>
                         <p className="text-xs text-slate-400">{reg.courseSelected} • {reg.mobileNumber}</p>
                       </div>
-                      <button
-                        onClick={() => handleAttendanceToggle(reg.id, status)}
-                        className={`flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-bold transition-all ${
-                          isPresent
-                            ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-100'
-                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                        }`}
-                      >
-                        <CheckCircle2 size={16} />
-                        {isPresent ? 'Present' : 'Absent'}
-                      </button>
+                      <div className="flex items-center gap-4">
+                        {(() => {
+                          const status = getAttStatus(reg.id);
+                          if (status) {
+                            return (
+                              <div className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-[10px] font-black uppercase tracking-wider ${
+                                status === 'Present' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'
+                              }`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${status === 'Present' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                                {status}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleAttendanceSet(reg.id, 'Present')}
+                                className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-black text-white hover:bg-emerald-700 transition shadow-sm shadow-emerald-200"
+                              >
+                                Mark Present
+                              </button>
+                              <button
+                                onClick={() => handleAttendanceSet(reg.id, 'Absent')}
+                                className="rounded-xl bg-red-600 px-4 py-1.5 text-xs font-black text-white hover:bg-red-700 transition shadow-sm shadow-red-200"
+                              >
+                                Mark Absent
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   )
                 })}
               </div>
             )}
           </div>
+
         </div>
       )}
 
@@ -430,11 +528,11 @@ export default function StaffPage() {
                   {/* Payment Method */}
                   <div className="space-y-2">
                     <label className="text-xs font-black uppercase tracking-widest text-slate-400">Method</label>
-                    <div className="flex flex-wrap gap-2">
-                      {(['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'DD'] as const).map(m => (
-                        <label key={m} className={`flex items-center gap-1.5 rounded-xl border-2 px-3 py-2 cursor-pointer text-xs font-bold transition-all ${payForm.payment_method === m ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-500 hover:border-slate-300'}`}>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['Cash', 'UPI'] as const).map(m => (
+                        <label key={m} className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-2 cursor-pointer text-xs font-bold transition-all ${payForm.payment_method === m ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-500 hover:border-slate-300'}`}>
                           <input type="radio" value={m} checked={payForm.payment_method === m} onChange={() => setPayForm(p => ({ ...p, payment_method: m }))} className="hidden" />
-                          {m}
+                          {m === 'Cash' ? '💵' : '📱'} {m}
                         </label>
                       ))}
                     </div>

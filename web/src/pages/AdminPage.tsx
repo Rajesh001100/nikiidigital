@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getRegistrations, deleteAllRegistrations, deleteRegistration, registrationsCsvUrl, paymentsCsvUrl, getCourses, createCourse, updateCourse, deleteCourse, getDashboardStats, updateRegistrationStatus, getSettings, updateSettings, getAttendance, updateAttendance, notifyCertificate, getAdminAnalytics, updateRegistration, getAdminMaterials, addAdminMaterial, deleteAdminMaterial, getAdminPayments, addAdminPayment } from '../lib/api'
+import { getRegistrations, deleteAllRegistrations, deleteRegistration, registrationsCsvUrl, paymentsCsvUrl, getCourses, createCourse, updateCourse, deleteCourse, updateRegistrationStatus, getSettings, updateSettings, getAttendance, updateAttendance, notifyCertificate, getAdminAnalytics, updateRegistration, getAdminMaterials, addAdminMaterial, deleteAdminMaterial, getAdminPayments, addAdminPayment } from '../lib/api'
 import type { RegistrationRow, Course, AdminAnalytics, Material, Payment } from '../types'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { LayoutDashboard, Users, BookOpen, Download, Plus, Trash2, Edit3, CheckCircle2, Settings, FileText, Send, Award } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -9,7 +8,7 @@ import autoTable from 'jspdf-autotable'
 type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'loaded'; rows: RegistrationRow[]; courses: Course[]; stats: any; settings: any; attendance: any[]; analytics: AdminAnalytics; materials: Material[]; payments: Payment[]; paymentSummary: { totalFullCount: number; totalInstalment1Count: number; pendingInst2Count: number; totalRevenue: number }; pendingSecondInstalment: Payment[] }
+  | { status: 'loaded'; rows: RegistrationRow[]; courses: Course[]; settings: any; attendance: any[]; analytics: AdminAnalytics; materials: Material[]; payments: Payment[]; paymentSummary: { totalFullCount: number; totalInstalment1Count: number; pendingInst2Count: number; totalRevenue: number }; pendingSecondInstalment: Payment[] }
   | { status: 'error'; message: string }
 
 const STORAGE_KEY = 'nikiidigital_admin_key'
@@ -18,6 +17,7 @@ export default function AdminPage() {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem(STORAGE_KEY) ?? '')
   const [activeTab, setActiveTab] = useState<'stats' | 'regs' | 'courses' | 'attendance' | 'certificates' | 'settings' | 'analytics' | 'payments'>('stats')
   const [selectedCourseForMaterials, setSelectedCourseForMaterials] = useState<Course | null>(null)
+  const [featuresTempString, setFeaturesTempString] = useState('')
   const [paymentForm, setPaymentForm] = useState<{
     payment_type: string;
     payment_method: 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'DD';
@@ -67,8 +67,11 @@ export default function AdminPage() {
   const [settingsForm, setSettingsForm] = useState<any>({
     batchTimes: [],
     promoCodes: [],
-    promoDiscount: 0
+    promoDiscount: 0,
+    academicYears: ['2026-2027'],
+    currentAcademicYear: '2026-2027'
   })
+  const [selectedYear, setSelectedYear] = useState('')
   const [overviewDate, setOverviewDate] = useState(new Date().toISOString().split('T')[0])
 
   // Search & Filter State
@@ -81,29 +84,31 @@ export default function AdminPage() {
 
   const registrations = state.status === 'loaded' ? state.rows : []
   const courses = state.status === 'loaded' ? state.courses : []
-  const stats = state.status === 'loaded' ? state.stats : null
 
-  async function load(keyOverride?: string) {
+  async function load(keyOverride?: string, yearOverride?: string) {
     const key = keyOverride ?? adminKey
     if (!key) return
     setState({ status: 'loading' })
     try {
       console.log("Fetching fresh data...")
-      const [r, c, s, sett, att, ana, mat, pay] = await Promise.all([
-        getRegistrations(key),
+      
+      const sett = await getSettings();
+      const activeYear = yearOverride || selectedYear || sett.currentAcademicYear || '2026-2027';
+      if (!selectedYear) setSelectedYear(activeYear);
+      if (sett) setSettingsForm(sett);
+
+      const [r, c, att, ana, mat, pay] = await Promise.all([
+        getRegistrations(key, activeYear),
         getCourses(),
-        getDashboardStats(key),
-        getSettings(),
-        getAttendance(key, attendanceDate),
-        getAdminAnalytics(key),
+        getAttendance(key, attendanceDate, activeYear),
+        getAdminAnalytics(key), // Note: didn't update api method sig for getAdminAnalytics ? Wait, I need to check api.ts if I updated getAdminAnalytics.
         getAdminMaterials(),
-        getAdminPayments(key)
+        getAdminPayments(key, activeYear)
       ])
       setState({
         status: 'loaded',
         rows: r.registrations,
         courses: c.courses,
-        stats: s,
         settings: sett,
         attendance: att.attendance,
         analytics: ana,
@@ -112,7 +117,6 @@ export default function AdminPage() {
         paymentSummary: pay.summary || { totalFullCount: 0, totalInstalment1Count: 0, pendingInst2Count: 0, totalRevenue: 0 },
         pendingSecondInstalment: pay.pendingSecondInstalment || []
       })
-      if (sett) setSettingsForm(sett)
     } catch (e: unknown) {
       setState({ status: 'error', message: e instanceof Error ? e.message : 'Failed to load' })
     }
@@ -140,6 +144,7 @@ export default function AdminPage() {
         await createCourse(adminKey, courseForm)
       }
       setIsEditingCourse(null)
+      setFeaturesTempString('')
       setCourseForm({ title: '', duration: '', description: '', icon: 'bi-mortarboard-fill', color: 'from-blue-500 to-indigo-600', features: [], imageUrl: '', isActive: true, isPromoted: false, badgeText: '', totalFee: 0 })
       void load(adminKey)
     } catch (err: any) {
@@ -648,8 +653,23 @@ export default function AdminPage() {
       <header className="flex flex-wrap items-start md:items-center justify-between gap-4 md:gap-6">
         <div>
           <h1 className="text-2xl md:text-4xl font-black text-slate-900 tracking-tight">NiKii Dashboard</h1>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex flex-wrap items-center gap-3 mt-2">
             <p className="text-slate-500 font-medium italic text-sm md:text-base">Welcome back, Administrator</p>
+            <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-2 py-1">
+              <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">Year:</span>
+              <select
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value);
+                  void load(adminKey, e.target.value);
+                }}
+                className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
+              >
+                {(settingsForm.academicYears || ['2025-2026', '2026-2027']).map((y: string) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
             <button onClick={() => load(adminKey)} className="text-blue-600 hover:text-blue-800 p-1 transition-colors" title="Refresh Data">
               <i className={`bi bi-arrow-clockwise text-lg ${state.status === 'loading' ? 'animate-spin' : ''}`} />
             </button>
@@ -729,121 +749,142 @@ export default function AdminPage() {
       {state.status === 'loaded' && (
         <div className="animate-in fade-in duration-500">
           {/* --- DASHBOARD OVERVIEW --- */}
-          {activeTab === 'stats' && (
-            <div className="space-y-8">
-              <div className="grid gap-6 md:grid-cols-3">
-                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total Registrations</p>
-                    <p className="mt-3 text-5xl font-black text-slate-900">{registrations.length}</p>
-                  </div>
-                  <div className="mt-6">
-                    <button
-                      onClick={downloadPdf}
-                      disabled={registrations.length === 0}
-                      className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition"
-                    >
-                      <FileText size={16} />
-                      Export PDF
-                    </button>
-                  </div>
-                </div>
-                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">Confirmed Admissions</p>
-                  <p className="mt-3 text-5xl font-black text-emerald-600">{registrations.filter(r => r.status === 'Confirmed').length}</p>
-                </div>
-                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">Conversion Rate</p>
-                  <p className="mt-3 text-5xl font-black text-slate-900">
-                    {registrations.length > 0
-                      ? Math.round((registrations.filter(r => r.status === 'Confirmed').length / registrations.length) * 100)
-                      : 0}%
-                  </p>
-                </div>
-              </div>
+          {activeTab === 'stats' && state.status === 'loaded' && (() => {
+            const { payments, attendance } = state;
+            
+            // Financial Summary
+            const totalCollected = (payments || []).reduce((s, p) => s + p.amount_paid, 0);
+            const totalExpected = registrations.reduce((s, student) => {
+              if (student.status !== 'Confirmed') return s;
+              const course = courses.find(c => c.title === student.courseSelected);
+              const fee = course?.totalFee || 0;
+              const disc = student.discount_amount || 0;
+              return s + Math.max(0, fee - disc);
+            }, 0);
+            const totalBalance = Math.max(0, totalExpected - totalCollected);
+            
+            // Attendance Summary (Batch-wise)
+            const batchStats = (settingsForm.batchTimes || []).map((batch: string) => {
+              const batchStudents = registrations.filter(r => r.preferredBatchTime === batch && r.status === 'Confirmed');
+              const total = batchStudents.length;
+              const absentCount = batchStudents.filter(reg => {
+                const record = (attendance || []).find(a => a.registration_id === reg.id);
+                return record && record.status === 'Absent';
+              }).length;
+              return { 
+                batch, 
+                current: total - absentCount, 
+                total 
+              };
+            });
 
-              <div className="grid gap-6 md:grid-cols-3">
-                <div className="rounded-[2rem] bg-white p-8 border border-slate-100 shadow-sm hover:scale-[1.02] transition-transform">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Monthly Growth</p>
-                  <p className="mt-4 text-4xl font-black text-slate-900">+12.4%</p>
-                  <p className="mt-2 text-sm font-bold text-emerald-500">Trending Upward</p>
-                </div>
-                <div className="rounded-3xl bg-blue-600 p-8 text-white shadow-xl hover:scale-[1.02] transition-transform">
-                  <p className="text-xs font-black uppercase tracking-widest text-blue-200">Revenue Potential</p>
-                  <p className="mt-3 text-4xl font-black">₹{registrations.filter(r => r.status === 'Confirmed').length * 5000}+</p>
-                </div>
-                <div className="rounded-[2rem] bg-white p-8 border border-slate-100 shadow-sm hover:scale-[1.02] transition-transform">
-                  <div className="flex items-center justify-between gap-4 mb-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Day-wise Reports</p>
-                    <input 
-                      type="date" 
-                      value={overviewDate}
-                      onChange={(e) => setOverviewDate(e.target.value)}
-                      className="text-xs font-bold border-none bg-slate-50 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-blue-500/10"
-                    />
+            return (
+              <div className="space-y-8 animate-in fade-in duration-500">
+                <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+                  {/* Total Registrations */}
+                  <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total Registrations</p>
+                      <p className="mt-3 text-5xl font-black text-slate-900">{registrations.length}</p>
+                    </div>
+                    <div className="mt-6">
+                      <button
+                        onClick={downloadPdf}
+                        disabled={registrations.length === 0}
+                        className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition"
+                      >
+                        <FileText size={16} />
+                        Export PDF
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-8 items-end justify-between">
-                    <div className="flex gap-8">
+
+                  {/* Confirmed Admissions */}
+                  <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">Confirmed Admissions</p>
+                    <p className="mt-3 text-5xl font-black text-emerald-600">{registrations.filter(r => r.status === 'Confirmed').length}</p>
+                  </div>
+
+                  {/* Conversion Rate */}
+                  <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">Conversion Rate</p>
+                    <p className="mt-3 text-5xl font-black text-slate-900">
+                      {registrations.length > 0
+                        ? Math.round((registrations.filter(r => r.status === 'Confirmed').length / registrations.length) * 100)
+                        : 0}%
+                    </p>
+                  </div>
+
+                  {/* Day-wise Reports */}
+                  <div className="rounded-3xl bg-white p-8 border border-slate-100 shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Day-wise Reports</p>
+                      <input 
+                        type="date" 
+                        value={overviewDate}
+                        onChange={(e) => setOverviewDate(e.target.value)}
+                        className="text-xs font-bold border-none bg-slate-50 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-blue-500/10"
+                      />
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div className="flex gap-4">
+                        <div>
+                          <p className="text-2xl font-black text-slate-900">
+                            {registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate)).length}
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                        </div>
+                        <div className="pl-4 border-l border-slate-100">
+                          <p className="text-2xl font-black text-emerald-600">
+                            {registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate) && r.status === 'Confirmed').length}
+                          </p>
+                          <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Success</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={downloadDayPdf}
+                        disabled={registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate)).length === 0}
+                        className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
+                      >
+                        <FileText size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+                  <div className="flex flex-col rounded-[2.5rem] bg-white p-8 border border-slate-100 shadow-sm">
+                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 mb-8">Financial Overview</h3>
+                    <div className="grid grid-cols-2 gap-8 mt-auto">
                       <div>
-                        <p className="text-4xl font-black text-slate-900">
-                          {registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate)).length}
-                        </p>
-                        <p className="mt-1 text-xs font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Collected</p>
+                        <p className="text-4xl font-black text-emerald-600">₹{totalCollected.toLocaleString()}</p>
                       </div>
                       <div className="pl-8 border-l border-slate-100">
-                        <p className="text-4xl font-black text-emerald-600">
-                          {registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate) && r.status === 'Confirmed').length}
-                        </p>
-                        <p className="mt-1 text-xs font-bold text-emerald-500 uppercase tracking-widest">Successful</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Balance</p>
+                        <p className="text-4xl font-black text-amber-500">₹{totalBalance.toLocaleString()}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={downloadDayPdf}
-                      disabled={registrations.filter(r => r.createdAt && r.createdAt.startsWith(overviewDate)).length === 0}
-                      className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
-                      title="Export Day Report PDF"
-                    >
-                      <FileText size={16} />
-                    </button>
+                  </div>
+
+                  <div className="rounded-[2.5rem] bg-white p-8 border border-slate-100 shadow-sm">
+                    <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 mb-8">Batch Attendance (Today)</h3>
+                    <div className="space-y-4">
+                      {batchStats.map((s: { batch: string; current: number; total: number }, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100/50">
+                          <p className="text-xs font-black text-slate-900">{s.batch}</p>
+                          <p className="text-xl font-black text-slate-900">{s.current}<span className="text-slate-400 text-sm">/{s.total}</span></p>
+                        </div>
+                      ))}
+                      {batchStats.length === 0 && <p className="text-xs italic text-slate-400">No batch timing set or attendance recorded today.</p>}
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* Top Charts */}
-              <div className="grid gap-8 lg:grid-cols-2">
-                <div className="rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
-                  <h3 className="mb-8 text-xl font-bold text-slate-900 px-2">Course Popularity</h3>
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={stats.courseDistribution}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                        <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                        <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} barSize={40} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                <div className="rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
-                  <h3 className="mb-8 text-xl font-bold text-slate-900 px-2">Registration Trends</h3>
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={stats.registrationTrend}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="count" stroke="#10b981" strokeWidth={4} dot={{ r: 6, fill: '#10b981' }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-
-            </div>
-          )}
+            );
+          })()}
+        </div>
+      )}
 
           {/* --- PAYMENTS TAB --- */}
           {activeTab === 'payments' && state.status === 'loaded' && (() => {
@@ -1342,7 +1383,11 @@ export default function AdminPage() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-2xl font-black text-slate-900">Live Programs</h3>
                   <button
-                    onClick={() => { setIsEditingCourse(null); setCourseForm({ title: '', duration: '', description: '', icon: 'bi-mortarboard-fill', color: 'from-blue-500 to-indigo-600', features: [], imageUrl: '', isActive: true, isPromoted: false, badgeText: '', totalFee: 0 }) }}
+                    onClick={() => { 
+                      setIsEditingCourse(null); 
+                      setFeaturesTempString('');
+                      setCourseForm({ title: '', duration: '', description: '', icon: 'bi-mortarboard-fill', color: 'from-blue-500 to-indigo-600', features: [], imageUrl: '', isActive: true, isPromoted: false, badgeText: '', totalFee: 0 }) 
+                    }}
                     className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-200"
                   >
                     <Plus size={24} />
@@ -1376,7 +1421,11 @@ export default function AdminPage() {
                             <FileText size={18} />
                           </button>
                           <button
-                            onClick={() => { setIsEditingCourse(course); setCourseForm(course) }}
+                            onClick={() => { 
+                              setIsEditingCourse(course); 
+                              setFeaturesTempString((course.features || []).join(', '));
+                              setCourseForm(course);
+                            }}
                             className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition"
                           >
                             <Edit3 size={18} />
@@ -1485,8 +1534,15 @@ export default function AdminPage() {
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Course Highlights (Comma Separated)</label>
                       <input
-                        value={(courseForm.features || []).join(', ')}
-                        onChange={e => setCourseForm({ ...courseForm, features: e.target.value.split(',').map(s => s.trim()).filter(s => s !== '') })}
+                        value={featuresTempString}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setFeaturesTempString(val);
+                          setCourseForm({ 
+                            ...courseForm, 
+                            features: val.split(',').map(s => s.trim()).filter(s => s !== '') 
+                          });
+                        }}
                         className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
                         placeholder="Ex: Photoshop, Tally, GST"
                       />
@@ -1618,14 +1674,27 @@ export default function AdminPage() {
                               <div className="text-xs font-bold text-slate-700">{reg.courseSelected}</div>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-2 print:hidden">
-                                <button
-                                  onClick={() => handleAttendanceToggle(reg.id, status)}
-                                  className={`h-10 w-20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${status === 'Present' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100' : 'bg-slate-100 text-slate-400'
-                                    }`}
-                                >
-                                  {status === 'Present' ? 'Present' : 'Absent'}
-                                </button>
+                              <div className="flex items-center gap-6 print:hidden">
+                                <label className="flex items-center gap-2 cursor-pointer group">
+                                  <input 
+                                    type="radio" 
+                                    name={`attendance-${reg.id}`} 
+                                    checked={status === 'Present'}
+                                    onChange={() => { if (status !== 'Present') handleAttendanceToggle(reg.id, status) }}
+                                    className="h-4 w-4 bg-slate-100 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${status === 'Present' ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'}`}>Present</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer group">
+                                  <input 
+                                    type="radio" 
+                                    name={`attendance-${reg.id}`} 
+                                    checked={status === 'Absent'}
+                                    onChange={() => { if (status !== 'Absent') handleAttendanceToggle(reg.id, status) }}
+                                    className="h-4 w-4 bg-slate-100 border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                                  />
+                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${status === 'Absent' ? 'text-red-500' : 'text-slate-400 group-hover:text-slate-600'}`}>Absent</span>
+                                </label>
                               </div>
                               <div className="hidden print:block h-6 w-12 border-2 border-slate-200 rounded print:border-slate-400" />
                             </td>
@@ -1808,12 +1877,12 @@ export default function AdminPage() {
                 </div>
 
                 <div className="lg:col-span-2 space-y-6 rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
-                  <h3 className="text-xl font-bold text-slate-900">General Information</h3>
+                  <h3 className="text-xl font-bold text-slate-900">General Information & Academic Year</h3>
                   <div className="grid gap-6 md:grid-cols-2">
                     <div className="space-y-2">
                       <label className="text-xs font-black uppercase tracking-widest text-slate-400">Contact Number</label>
                       <input
-                        value={settingsForm.contactNumber}
+                        value={settingsForm.contactNumber || ''}
                         onChange={e => setSettingsForm({ ...settingsForm, contactNumber: e.target.value })}
                         className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
                       />
@@ -1821,10 +1890,33 @@ export default function AdminPage() {
                     <div className="space-y-2">
                       <label className="text-xs font-black uppercase tracking-widest text-slate-400">Academy Address</label>
                       <input
-                        value={settingsForm.address}
+                        value={settingsForm.address || ''}
                         onChange={e => setSettingsForm({ ...settingsForm, address: e.target.value })}
                         className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Available Academic Years</label>
+                      <input
+                        value={(settingsForm.academicYears || ['2026-2027']).join(', ')}
+                        onChange={e => setSettingsForm({ ...settingsForm, academicYears: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
+                        placeholder="e.g. 2025-2026, 2026-2027"
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
+                      />
+                      <p className="text-[10px] font-medium text-slate-400">Comma separated list of academic years.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Current Active Year</label>
+                      <select
+                        value={settingsForm.currentAcademicYear || '2026-2027'}
+                        onChange={e => setSettingsForm({ ...settingsForm, currentAcademicYear: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
+                      >
+                         {(settingsForm.academicYears || ['2026-2027']).map((y: string) => (
+                           <option key={y} value={y}>{y}</option>
+                         ))}
+                      </select>
+                      <p className="text-[10px] font-medium text-slate-400">New registrations will be assigned to this year.</p>
                     </div>
                   </div>
                 </div>
@@ -2163,7 +2255,5 @@ export default function AdminPage() {
          </div>
         )}
       </div>
-    )}
-  </div>
-)
+    );
 }

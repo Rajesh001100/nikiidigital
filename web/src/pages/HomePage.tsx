@@ -28,6 +28,9 @@ const CourseSkeleton = () => (
 
 const Schema = z.object({
   fullName: z.string().min(2, 'Please enter your full name').max(100),
+  fatherName: z.string().optional(),
+  religion: z.string().optional(),
+  nationality: z.string().optional(),
   email: z.string().email('Please enter a valid email').max(200),
   gender: z.string().min(1, 'Please select gender'),
   dateOfBirth: z.string().min(1, 'Date of birth is required'),
@@ -76,6 +79,9 @@ export default function HomePage() {
     resolver: zodResolver(Schema),
     defaultValues: {
       fullName: '',
+      fatherName: '',
+      religion: '',
+      nationality: '',
       email: '',
       dateOfBirth: '',
       address: '',
@@ -442,168 +448,137 @@ export default function HomePage() {
                       </div>
                     )}
 
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-sm">1</span>
-                      Student Identity
-                    </h3>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Student's Full Name *</label>
-                        <input
-                          {...form.register('fullName')}
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm placeholder:text-slate-300"
-                          placeholder="Your Name"
-                        />
-                        {form.formState.errors.fullName && <p className="text-xs font-bold text-red-500">{form.formState.errors.fullName.message}</p>}
+                    {/* SECTION 1: PERSONAL DETAILS */}
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-3 border-b-2 border-emerald-500 pb-2">
+                        <i className="bi bi-person-lines-fill text-xl text-emerald-600"></i>
+                        <h3 className="text-lg font-black text-emerald-700 tracking-wider">PERSONAL DETAILS</h3>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Email Address *</label>
-                        <input
-                          type="email"
-                          {...form.register('email')}
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm placeholder:text-slate-300"
-                          placeholder="hello@example.com"
-                        />
-                        {form.formState.errors.email && <p className="text-xs font-bold text-red-500">{form.formState.errors.email.message}</p>}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Gender *</label>
-                        <div className="flex gap-6">
-                          {['Male', 'Female'].map((g) => (
-                            <label key={g} className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="radio"
-                                value={g}
-                                {...form.register('gender')}
-                                className="w-4 h-4 accent-blue-600 cursor-pointer"
-                              />
-                              <span className="text-sm font-semibold text-slate-700">{g}</span>
-                            </label>
-                          ))}
+                      <div className="grid gap-6 md:grid-cols-2">
+                        <div className="relative group md:col-span-2">
+                          <input type="text" id="fullName" {...form.register('fullName')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="fullName" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Name of the Student *</label>
+                          {form.formState.errors.fullName && <p className="absolute -bottom-5 left-2 text-[10px] font-bold text-red-500">{form.formState.errors.fullName.message}</p>}
                         </div>
-                        {form.formState.errors.gender && <p className="text-xs font-bold text-red-500">{form.formState.errors.gender.message}</p>}
-                      </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Date of Birth *</label>
-                        <input
-                          type="date"
-                          {...form.register('dateOfBirth')}
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm"
-                        />
-                        {form.formState.errors.dateOfBirth && <p className="text-xs font-bold text-red-500">{form.formState.errors.dateOfBirth.message}</p>}
-                      </div>
-                    </div>
+                        <div className="relative group md:col-span-2">
+                          <input type="text" id="fatherName" {...form.register('fatherName')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="fatherName" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Father's Name / Guardian Name</label>
+                        </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Permanent Address *</label>
-                      <textarea
-                        {...form.register('address')}
-                        rows={2}
-                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm resize-none placeholder:text-slate-300"
-                        placeholder="Ex: No 1, Main Street, Anthiyur..."
-                      />
-                      {form.formState.errors.address && <p className="text-xs font-bold text-red-500">{form.formState.errors.address.message}</p>}
-                    </div>
-                  </div>
+                        <div className="relative group">
+                          <input type="date" id="dateOfBirth" {...form.register('dateOfBirth')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="dateOfBirth" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Date of Birth *</label>
+                          {form.formState.errors.dateOfBirth && <p className="absolute -bottom-5 left-2 text-[10px] font-bold text-red-500">{form.formState.errors.dateOfBirth.message}</p>}
+                        </div>
 
-                  <div className="space-y-5">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white text-sm">2</span>
-                      Qualifications
-                    </h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Highest Qualification *</label>
-                        <div className="relative">
-                          <select {...form.register('highestQualification')} className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm">
-                            <option value="">Choose one</option>
+                        <div className="relative group">
+                          <input type="text" id="religion" {...form.register('religion')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="religion" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Religion</label>
+                        </div>
+
+                        <div className="relative group">
+                          <select id="highestQualification" {...form.register('highestQualification')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all">
+                            <option value=""></option>
                             {qualifications.map(q => <option key={q} value={q}>{q}</option>)}
                           </select>
-                          <i className="bi bi-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs" />
+                          <label htmlFor="highestQualification" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Qualification *</label>
+                          <i className="bi bi-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xs" />
+                        </div>
+
+                        <div className="relative group">
+                          <input type="text" id="nationality" {...form.register('nationality')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="nationality" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Nationality</label>
+                        </div>
+
+                        <div className="relative group">
+                          <input type="tel" id="mobileNumber" maxLength={10} {...form.register('mobileNumber')} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 10); form.setValue('mobileNumber', val); }} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="mobileNumber" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Mobile No (WhatsApp) *</label>
+                          {form.formState.errors.mobileNumber && <p className="absolute -bottom-5 left-2 text-[10px] font-bold text-red-500">{form.formState.errors.mobileNumber.message}</p>}
+                        </div>
+
+                        <div className="relative group border-2 border-slate-200 rounded-xl bg-slate-50 px-4 py-2 flex md:flex-col lg:flex-row items-start lg:items-center justify-between transition-colors focus-within:border-emerald-600 focus-within:bg-white">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1 lg:mb-0">Gender *</span>
+                          <div className="flex gap-4">
+                            {['Male', 'Female'].map((g) => (
+                              <label key={g} className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" value={g} {...form.register('gender')} className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
+                                <span className="text-sm font-bold text-slate-700">{g}</span>
+                              </label>
+                            ))}
+                          </div>
+                          {form.formState.errors.gender && <p className="absolute -bottom-5 left-2 text-[10px] font-bold text-red-500">{form.formState.errors.gender.message}</p>}
+                        </div>
+
+                        <div className="relative group md:col-span-2">
+                          <input type="email" id="email" {...form.register('email')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="email" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Mail ID *</label>
+                          {form.formState.errors.email && <p className="absolute -bottom-5 left-2 text-[10px] font-bold text-red-500">{form.formState.errors.email.message}</p>}
+                        </div>
+
+                        <div className="relative group md:col-span-2">
+                          <textarea id="address" rows={2} {...form.register('address')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all resize-none" placeholder=" " />
+                          <label htmlFor="address" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Permanent Address *</label>
+                          {form.formState.errors.address && <p className="absolute -bottom-5 left-2 text-[10px] font-bold text-red-500">{form.formState.errors.address.message}</p>}
                         </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Institution Name *</label>
-                        <input {...form.register('schoolCollegeName')} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm" placeholder="School/College Name" />
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Year / Grade *</label>
-                        <input {...form.register('yearOfStudy')} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm" placeholder="Ex: 10th Standard or 3rd Year" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Mobile (WhatsApp) *</label>
-                        <input
-                          type="tel"
-                          maxLength={10}
-                          {...form.register('mobileNumber')}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                            form.setValue('mobileNumber', val);
-                          }}
-                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm"
-                          placeholder="10 digit mobile number"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-5">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-sm">3</span>
-                      Extra Information
-                    </h3>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Promocode (Optional)</label>
-                      <input
-                        {...form.register('promoCode')}
-                        placeholder="Ex: SUMMER50"
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition shadow-sm uppercase placeholder:normal-case"
-                      />
-                      {settings?.promoCodes?.find((p: any) => p.code === form.watch('promoCode')?.toUpperCase()) && (
-                        <p className="text-xs font-bold text-emerald-600 flex items-center gap-2 animate-bounce">
-                          <i className="bi bi-patch-check-fill" /> {settings.promoCodes.find((p: any) => p.code === form.watch('promoCode')?.toUpperCase()).description}
-                        </p>
-                      )}
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Preferred Batch *</label>
-                        <div className="relative">
-                          <select {...form.register('preferredBatchTime')} className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm">
-                            <option value="">Choose Batch Time</option>
+                    {/* SECTION 2: OFFICE USE / COURSE DETAILS */}
+                    <div className="space-y-6 pt-6 mt-6">
+                      <div className="flex items-center gap-3 border-b-2 border-emerald-500 pb-2">
+                        <i className="bi bi-journal-bookmark-fill text-xl text-emerald-600"></i>
+                        <h3 className="text-lg font-black text-emerald-700 tracking-wider">OFFICE / COURSE DETAILS</h3>
+                      </div>
+
+                      <div className="grid gap-6 md:grid-cols-2">
+                        <div className="relative group">
+                          <input type="text" id="schoolCollegeName" {...form.register('schoolCollegeName')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="schoolCollegeName" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Institution Name *</label>
+                        </div>
+                        <div className="relative group">
+                          <input type="text" id="yearOfStudy" {...form.register('yearOfStudy')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all" placeholder=" " />
+                          <label htmlFor="yearOfStudy" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Year / Grade *</label>
+                        </div>
+
+                        <div className="relative group">
+                          <select id="preferredBatchTime" {...form.register('preferredBatchTime')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all">
+                            <option value=""></option>
                             {batches.map((b: string) => <option key={b} value={b}>{b}</option>)}
                           </select>
-                          <i className="bi bi-clock absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs" />
+                          <label htmlFor="preferredBatchTime" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Batch Timing *</label>
+                          <i className="bi bi-clock absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xs" />
                         </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">How did you hear? *</label>
-                        <div className="relative">
-                          <select {...form.register('howDidYouHear')} className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition font-medium text-sm">
-                            <option value="">Choose Source</option>
+
+                        <div className="relative group">
+                          <select id="howDidYouHear" {...form.register('howDidYouHear')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all">
+                            <option value=""></option>
                             {sources.map((s: string) => <option key={s} value={s}>{s}</option>)}
                           </select>
-                          <i className="bi bi-megaphone absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs" />
+                          <label htmlFor="howDidYouHear" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">How did you hear? *</label>
+                          <i className="bi bi-megaphone absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xs" />
+                        </div>
+                        
+                        <div className="relative group md:col-span-2">
+                          <input type="text" id="promoCode" {...form.register('promoCode')} className="block w-full px-4 pt-6 pb-2 text-sm font-bold text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl appearance-none focus:outline-none focus:ring-0 focus:border-emerald-600 focus:bg-white peer transition-all uppercase" placeholder=" " />
+                          <label htmlFor="promoCode" className="absolute text-xs font-black uppercase tracking-wider text-slate-400 duration-300 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] start-4 peer-focus:text-emerald-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3">Promocode (Optional)</label>
+                          {settings?.promoCodes?.find((p: any) => p.code === form.watch('promoCode')?.toUpperCase()) && (
+                            <p className="absolute -bottom-6 left-2 text-[10px] font-bold text-emerald-600 flex items-center gap-1 animate-bounce">
+                              <i className="bi bi-patch-check-fill" /> {settings.promoCodes.find((p: any) => p.code === form.watch('promoCode')?.toUpperCase()).description}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-5">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white text-sm">4</span>
-                      Payment Preferences
-                    </h3>
-                    <div className="grid gap-3 md:grid-cols-2">
+                    {/* SECTION 3: PAYMENT */}
+                    <div className="space-y-6 pt-6 mt-6">
+                      <div className="flex items-center gap-3 border-b-2 border-emerald-500 pb-2">
+                        <i className="bi bi-credit-card-fill text-xl text-emerald-600"></i>
+                        <h3 className="text-lg font-black text-emerald-700 tracking-wider">PAYMENT DETAILS</h3>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
                       {[
                         { id: 'Online Mode', label: 'Online Payment', desc: 'UPI / Card / NetBanking', icon: 'bi-lightning-charge-fill' },
                         { id: 'Offline Mode', label: 'Offline Payment', desc: 'Cash at Academy Counter', icon: 'bi-cash' }
@@ -634,13 +609,26 @@ export default function HomePage() {
                         </h4>
 
                         <div className="flex flex-col md:flex-row gap-6 items-center relative z-10">
-                          <div className="shrink-0 p-2 bg-white rounded-xl shadow-md border border-slate-100">
-                            <img src="/paymentqr.png" alt="Payment QR Code" className="w-32 h-32 md:w-36 md:h-36 object-contain" />
-                          </div>
+                          <a 
+                            href="upi://pay?pa=97509344434-2@okbizaxis&pn=NiKii%20Computer%20Academy"
+                            className="relative shrink-0 p-2 bg-white rounded-xl shadow-md border border-slate-100 hover:scale-105 hover:shadow-emerald-200 transition-all cursor-pointer group"
+                            title="Click to open UPI App"
+                          >
+                            <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+                              <i className="bi bi-box-arrow-up-right text-emerald-600 text-2xl font-bold opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md"></i>
+                            </div>
+                            <img src="/paymentqr.png" alt="Payment QR Code" className="relative z-10 w-32 h-32 md:w-36 md:h-36 object-contain group-hover:opacity-30 transition-opacity" />
+                          </a>
                           <div className="space-y-4 flex-1 text-center md:text-left">
                             <div>
-                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Scan QR or use UPI ID</p>
-                              <p className="text-lg md:text-xl font-black text-slate-900 select-all tracking-wide">97509344434-2@okbizaxis</p>
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Scan QR or Click to Pay</p>
+                              <a 
+                                href="upi://pay?pa=97509344434-2@okbizaxis&pn=NiKii%20Computer%20Academy"
+                                className="inline-block text-lg md:text-xl font-black text-slate-900 tracking-wide hover:text-emerald-600 hover:underline transition-all"
+                                title="Click to open UPI App"
+                              >
+                                97509344434-2@okbizaxis
+                              </a>
                             </div>
                             <div className="bg-amber-50 border border-amber-100 text-amber-700 p-3 rounded-xl text-xs sm:text-sm font-semibold leading-relaxed text-left">
                               <span className="flex items-center gap-1.5 mb-1 text-amber-800 font-bold"><AlertCircle size={14} /> Attention</span>
@@ -650,7 +638,8 @@ export default function HomePage() {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div> {/* END OF SECTION 3 */}
+                </div> {/* END OF space-y-8 */}
 
                   <div className="pt-4 flex flex-col items-center">
                     <button

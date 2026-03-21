@@ -48,8 +48,8 @@ export async function createRegistration(input: RegistrationInput) {
   })
 }
 
-export async function getRegistrations(adminKey: string) {
-  return apiFetch<{ registrations: RegistrationRow[] }>('/api/registrations', {
+export async function getRegistrations(adminKey: string, academicYear?: string) {
+  return apiFetch<{ registrations: RegistrationRow[] }>(`/api/registrations${academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ''}`, {
     method: 'GET',
     adminKey,
   })
@@ -85,12 +85,12 @@ export async function updateRegistration(adminKey: string, id: number, data: Par
   })
 }
 
-export function registrationsCsvUrl() {
-  return `${API_URL}/api/registrations.csv`
+export function registrationsCsvUrl(academicYear?: string) {
+  return `${API_URL}/api/registrations.csv${academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ''}`
 }
 
-export function paymentsCsvUrl() {
-  return `${API_URL}/api/admin/payments.csv`
+export function paymentsCsvUrl(academicYear?: string) {
+  return `${API_URL}/api/admin/payments.csv${academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ''}`
 }
 
 // --- Courses CMS API ---
@@ -103,6 +103,8 @@ export async function getInitialData() {
       promoCodes?: { code: string; discount: string; description: string }[];
       contactNumber?: string;
       address?: string;
+      academicYears?: string[];
+      currentAcademicYear?: string;
     }
   }>('/api/initial-data', {
     headers: { 'Cache-Control': 'no-cache' }
@@ -144,6 +146,8 @@ export async function getSettings() {
     promoCodes?: { code: string; discount: string; description: string }[];
     contactNumber?: string;
     address?: string;
+    academicYears?: string[];
+    currentAcademicYear?: string;
   }>('/api/settings')
 }
 
@@ -157,8 +161,14 @@ export async function updateSettings(adminKey: string, settings: any) {
 
 // --- Attendance API ---
 
-export async function getAttendance(adminKey: string, date: string) {
-  return apiFetch<{ attendance: { registration_id: number; status: string }[] }>(`/api/attendance?date=${date}`, {
+export async function getAttendance(adminKey: string, date: string, academicYear?: string) {
+  return apiFetch<{ attendance: { registration_id: number; status: string }[] }>(`/api/attendance?date=${date}${academicYear ? `&academicYear=${encodeURIComponent(academicYear)}` : ''}`, {
+    adminKey
+  })
+}
+
+export async function getMonthlyAttendance(adminKey: string, month: string, academicYear?: string) {
+  return apiFetch<{ attendance: { registration_id: number; date: string; status: string }[] }>(`/api/attendance/monthly?month=${month}${academicYear ? `&academicYear=${encodeURIComponent(academicYear)}` : ''}`, {
     adminKey
   })
 }
@@ -173,11 +183,11 @@ export async function updateAttendance(adminKey: string, date: string, records: 
 
 // --- Dashboard API ---
 
-export async function getDashboardStats(adminKey: string) {
+export async function getDashboardStats(adminKey: string, academicYear?: string) {
   return apiFetch<{
     courseDistribution: { name: string; value: number }[];
     registrationTrend: { date: string; count: number }[];
-  }>('/api/dashboard-stats', { adminKey })
+  }>(`/api/dashboard-stats${academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ''}`, { adminKey })
 }
 
 export async function getRegistrationStatus(mobile: string) {
@@ -215,7 +225,7 @@ export async function getStudentDashboard(id: number) {
 
 // --- Admin Phase 4 Extensions ---
 
-export async function getAdminPayments(adminKey: string) {
+export async function getAdminPayments(adminKey: string, academicYear?: string) {
   return apiFetch<{
     payments: Payment[];
     summary: {
@@ -225,7 +235,7 @@ export async function getAdminPayments(adminKey: string) {
       totalRevenue: number;
     };
     pendingSecondInstalment: Payment[];
-  }>('/api/admin/payments', { adminKey })
+  }>(`/api/admin/payments${academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ''}`, { adminKey })
 }
 
 export async function addAdminPayment(adminKey: string, payment: Omit<Payment, 'id' | 'date'>) {

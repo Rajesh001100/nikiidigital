@@ -1,5 +1,8 @@
 export type RegistrationInput = {
   fullName: string
+  fatherName?: string
+  religion?: string
+  nationality?: string
   email: string
   gender: string
   dateOfBirth: string

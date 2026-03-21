@@ -4,6 +4,9 @@ import "dotenv/config";
 export type Registration = {
   id: number;
   fullName: string;
+  fatherName?: string;
+  religion?: string;
+  nationality?: string;
   email: string;
   gender: string;
   dateOfBirth: string;
