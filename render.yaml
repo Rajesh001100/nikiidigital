@@ -10,6 +10,8 @@ services:
         value: 5174
       - key: ADMIN_KEY
         sync: false
+      - key: STAFF_KEY
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
