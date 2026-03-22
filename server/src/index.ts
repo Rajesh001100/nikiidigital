@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { z } from "zod";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import path from "path";
 import dotenv from "dotenv";
 import helmet from "helmet";
@@ -20,13 +20,50 @@ console.log(`Server: Loading env from ${envPath}. Using port ${PORT}`);
 
 const ADMIN_KEY = (process.env.ADMIN_KEY ?? "NikiiSecure@2026_Admin").trim();
 const STAFF_KEY = (process.env.STAFF_KEY ?? "NikiiStaff@2026").trim();
-const resend = new Resend(process.env.RESEND_API_KEY);
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 console.log("-----------------------------------------");
 console.log("🔑 Authentication Keys Loaded:");
 console.log(`   Admin Key: [${ADMIN_KEY.length > 0 ? ADMIN_KEY[0] + '...' + ADMIN_KEY.slice(-1) : 'MISSING'}] (Length: ${ADMIN_KEY.length})`);
 console.log(`   Staff Key: [${STAFF_KEY.length > 0 ? STAFF_KEY[0] + '...' + STAFF_KEY.slice(-1) : 'MISSING'}] (Length: ${STAFF_KEY.length})`);
 console.log("-----------------------------------------");
+
+// --- Admin Key Dynamic Storage ---
+let cachedAdminKey: string | null = null;
+async function getDynamicAdminKey() {
+  if (cachedAdminKey) return cachedAdminKey;
+  
+  try {
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'admin_key')
+      .maybeSingle();
+      
+    if (data?.value) {
+      cachedAdminKey = String(data.value).trim();
+      console.log("🔐 Using Dynamic Admin Key from Database");
+    } else {
+      cachedAdminKey = ADMIN_KEY;
+      console.log("📁 Using Environment Admin Key");
+    }
+  } catch (err) {
+    console.error("Error fetching dynamic admin key:", err);
+    cachedAdminKey = ADMIN_KEY;
+  }
+  return cachedAdminKey;
+}
+
+function invalidateAdminKeyCache() {
+  cachedAdminKey = null;
+}
 
 const app = express();
 
@@ -109,34 +146,55 @@ app.use("/api/", globalLimiter);
 // registrationLimiter removed from global use to allow Admin GET requests
 
 // --- AUTH MIDDLEWARE ---
-const verifyAdmin = (req: any, res: any, next: any) => {
+const verifyAdmin = async (req: any, res: any, next: any) => {
   const adminKeyHeader = req.headers['x-admin-key'];
-  const key = typeof adminKeyHeader === 'string' ? adminKeyHeader.trim() : '';
+  const providedKey = typeof adminKeyHeader === 'string' ? adminKeyHeader.trim() : '';
+  
+  if (!providedKey) return res.status(401).json({ error: "No Access Key Provided" });
 
-  if (key === ADMIN_KEY) {
+  const currentAdminKey = await getDynamicAdminKey();
+  if (providedKey === currentAdminKey) {
     req.isAdmin = true;
     next();
   } else {
-    console.warn(`Auth: Admin login attempt failed. Header: ${!!key}`);
+    console.warn(`Auth: Admin login attempt failed. Check header presence: ${!!providedKey}`);
     res.status(401).json({ error: "Unauthorized access detected." });
   }
 };
 
 // Accepts admin OR staff key
-const verifyStaff = (req: any, res: any, next: any) => {
-  const adminKeyHeader = req.headers['x-admin-key'];
-  const key = typeof adminKeyHeader === 'string' ? adminKeyHeader.trim() : '';
+const verifyStaff = async (req: any, res: any, next: any) => {
+  const authKeyHeader = req.headers['x-admin-key'];
+  const providedKey = typeof authKeyHeader === 'string' ? authKeyHeader.trim() : '';
 
-  if (key === ADMIN_KEY) {
+  if (!providedKey) return res.status(401).json({ error: "No Access Key Provided" });
+
+  const currentAdminKey = await getDynamicAdminKey();
+  if (providedKey === currentAdminKey) {
     req.isAdmin = true;
-    next();
-  } else if (key === STAFF_KEY) {
+    return next();
+  } 
+  
+  if (providedKey === STAFF_KEY) {
     req.isAdmin = false;
-    next();
-  } else {
-    console.warn(`Auth: Staff login attempt failed. Header: ${!!key}`);
-    res.status(401).json({ error: "Unauthorized access detected." });
+    return next();
   }
+
+  // Check if it's an individual staff username (token)
+  try {
+    const { data: staff } = await supabase
+      .from('staff_accounts')
+      .select('username')
+      .eq('username', providedKey)
+      .maybeSingle();
+
+    if (staff) {
+      req.isAdmin = false;
+      return next();
+    }
+  } catch (e) {}
+
+  res.status(401).json({ error: "Unauthorized access detected." });
 };
 
 // --- Cache Implementation ---
@@ -186,23 +244,75 @@ app.post("/api/student/login", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('registrations')
-      .select('id, fullName, mobileNumber, dateOfBirth, courseSelected, status')
-      .eq('mobileNumber', normalizedMobile)
-      .eq('dateOfBirth', parsed.data.dateOfBirth)
+      .select('id, fullName, mobileNumber, dateOfBirth, courseSelected, status, academic_year, password')
+      .eq('mobileNumber', normalizedMobile);
+
+    if (error || !data || data.length === 0) {
+      return res.status(401).json({ error: "Log in failed. Check your mobile number and password." });
+    }
+
+    const confirmed = data.filter(d => d.status === 'Confirmed');
+
+    // Check password (matches stored password OR matches dateOfBirth as a legacy/default)
+    const valid = confirmed.filter(c => {
+      const storedPass = (c as any).password || c.dateOfBirth;
+      return storedPass === parsed.data.password;
+    });
+
+    if (valid.length === 0) {
+      return res.status(401).json({ error: "Log in failed. Check your mobile number and password." });
+    }
+
+    res.json({ students: valid });
+  } catch (err) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/api/staff/login", async (req, res) => {
+  const parsed = StaffLoginInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid login format" });
+
+  try {
+    const { data: staff, error } = await supabase
+      .from('staff_accounts')
+      .select('*')
+      .eq('username', parsed.data.username)
+      .eq('password', parsed.data.password)
       .single();
 
-    if (error || !data) {
-      return res.status(401).json({ error: "Log in failed. Check your mobile number and date of birth." });
+    if (error || !staff) {
+      return res.status(401).json({ error: "Invalid username or password" });
     }
 
-    if (data.status !== 'Confirmed') {
-      return res.status(403).json({
-        error: "Access Denied: Your admission is not yet confirmed.",
-        details: "Please contact the Academy Admin to complete your enrollment."
-      });
-    }
+    // For simplicity, we return the username as a temporary token/key. 
+    // In a production app, we would use JWT or a session table.
+    res.json({ ok: true, staffKey: staff.username, fullName: staff.full_name });
+  } catch (err) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
 
-    res.json({ student: data });
+app.post("/api/student/registrations", async (req, res) => {
+  const parsed = StudentLoginInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid credentials format" });
+
+  const normalizedMobile = parsed.data.mobileNumber.replace(/\D/g, '').slice(-10);
+
+  try {
+    const { data, error } = await supabase
+      .from('registrations')
+      .select('*')
+      .eq('mobileNumber', normalizedMobile);
+
+    if (error) throw error;
+
+    const valid = (data || []).filter(c => {
+      const storedPass = (c as any).password || c.dateOfBirth;
+      return storedPass === parsed.data.password;
+    });
+
+    res.json({ registrations: valid });
   } catch (err) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -319,7 +429,6 @@ const RegistrationInput = z.object({
   gender: z.string().min(1),
   dateOfBirth: z.string().min(1),
   address: z.string().min(1).max(500),
-  highestQualification: z.string().min(1),
   schoolCollegeName: z.string().min(1).max(200),
   yearOfStudy: z.string().min(1).max(100),
   mobileNumber: z.string().min(1).max(50),
@@ -328,6 +437,10 @@ const RegistrationInput = z.object({
   howDidYouHear: z.string().min(1),
   paymentMode: z.string().min(1),
   promoCode: z.string().optional(),
+  discount_amount: z.number().optional().nullable(),
+  academic_year: z.string().optional(),
+  highestQualification: z.string().optional().default(''),
+  status: z.enum(["Pending", "Confirmed", "Rejected", "Completed"]).optional(),
 });
 
 const PaymentInput = z.object({
@@ -348,7 +461,12 @@ const MaterialInput = z.object({
 
 const StudentLoginInput = z.object({
   mobileNumber: z.string().min(10).max(10),
-  dateOfBirth: z.string().min(1),
+  password: z.string().min(1),
+});
+
+const StaffLoginInput = z.object({
+  username: z.string().min(3),
+  password: z.string().min(1),
 });
 
 const CourseInput = z.object({
@@ -395,10 +513,29 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
 
   try {
     const { data: settingsData } = await supabase.from('settings').select('*');
-    let currentAcademicYear = '2026-2027'; // default
-    if (settingsData) {
-      const s = settingsData.reduce((acc: any, item: any) => ({...acc, [item.key]: item.value}), {});
-      if (s.currentAcademicYear) currentAcademicYear = s.currentAcademicYear;
+    const settings: any = settingsData?.reduce((acc: any, item: any) => ({...acc, [item.key]: item.value}), {}) || {};
+    console.log("DEBUG: Settings keys:", Object.keys(settings));
+    let currentAcademicYear = settings.currentAcademicYear || '2026-2027';
+
+    // Calculate discount on the server to prevent tampering
+    let calculatedDiscount = 0;
+    if (parsed.data.promoCode) {
+      const activePromo = settings.promoCodes?.find((p: any) => p.code.toUpperCase() === parsed.data.promoCode?.toUpperCase());
+      if (activePromo) {
+        const { data: courseData } = await supabase
+          .from('courses')
+          .select('totalFee')
+          .eq('title', parsed.data.courseSelected)
+          .maybeSingle();
+        
+        const baseFee = courseData?.totalFee || 0;
+        if (activePromo.discount.includes('%')) {
+          const percent = parseFloat(activePromo.discount);
+          calculatedDiscount = Math.round((baseFee * percent) / 100);
+        } else {
+          calculatedDiscount = parseFloat(activePromo.discount) || 0;
+        }
+      }
     }
 
     const { data, error } = await supabase
@@ -407,6 +544,7 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
         ...parsed.data,
         academic_year: currentAcademicYear,
         mobileNumber: normalizedMobile,
+        discount_amount: calculatedDiscount || parsed.data.discount_amount || 0,
         status: 'Pending',
         createdAt
       })
@@ -415,12 +553,12 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
 
     if (error) throw error;
 
-    // --- Auto-Email Notification (Resend) ---
+    // --- Auto-Email Notification (Nodemailer) ---
     try {
-      if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "re_your_api_key") {
-        const { data: resData, error: resError } = await resend.emails.send({
-          from: 'NiKii Digital <onboarding@resend.dev>',
-          to: 'rajeshrcb1817@gmail.com', // Overridden for Resend Sandbox restrictions (originally parsed.data.email)
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        await transporter.sendMail({
+          from: `"NiKii Digital" <${process.env.EMAIL_USER}>`,
+          to: parsed.data.email,
           subject: `Registration Successful - ${parsed.data.fullName} - NiKii Computer Academy`,
           html: `
             <div style="font-family: sans-serif; padding: 20px; color: #333;">
@@ -434,8 +572,7 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
             </div>
           `
         });
-        if (resError) console.error("Resend API Error (Student Email):", resError);
-        else console.log("Student Email dispatched successfully:", resData);
+        console.log("Student Email dispatched successfully via Nodemailer.");
       }
     } catch (emailErr) {
       console.error("Email failed to send:", emailErr);
@@ -451,11 +588,11 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
     const adminEmail = process.env.ADMIN_EMAIL;
     const adminMobile = process.env.ADMIN_MOBILE;
 
-    if (adminEmail) {
+    if (process.env.ADMIN_EMAIL && process.env.EMAIL_USER) {
       try {
-        const { data: adminRes, error: adminErr } = await resend.emails.send({
-          from: 'NiKii Alerts <onboarding@resend.dev>',
-          to: 'rajeshrcb1817@gmail.com', // Overridden for Resend Sandbox restrictions (originally adminEmail)
+        await transporter.sendMail({
+          from: `"NiKii Alerts" <${process.env.EMAIL_USER}>`,
+          to: process.env.ADMIN_EMAIL,
           subject: '🔥 New Registration Received!',
           html: `
             <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
@@ -471,8 +608,7 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
             </div>
           `
         });
-        if (adminErr) console.error("Admin Email API Error:", adminErr);
-        else console.log("Admin Email dispatched successfully.", adminRes);
+        console.log("Admin Email alert dispatched successfully via Nodemailer.");
       } catch (e) { console.error("Admin email alert failed:", e); }
     }
 
@@ -565,6 +701,13 @@ app.put("/api/registrations/:id/status", verifyAdmin, async (req: any, res: any)
       updateData.discount_amount = Number(discount_amount);
     }
 
+    // Check if status is actually changing to Confirmed to avoid duplicate notifications
+    const { data: existingReg } = await supabase
+      .from('registrations')
+      .select('status')
+      .eq('id', req.params.id)
+      .single();
+
     const { data: reg, error } = await supabase
       .from('registrations')
       .update(updateData)
@@ -573,30 +716,31 @@ app.put("/api/registrations/:id/status", verifyAdmin, async (req: any, res: any)
       .single();
 
     if (error) throw error;
+    if (!reg) return res.status(404).json({ error: "Registration not found" });
 
-    // Send Confirmation Email if Confirmed
-    if (status === 'Confirmed') {
+    // Send Confirmation Email ONLY if status is changing to Confirmed for the first time
+    // The RegistrationInput schema should include 'Completed' in the status enum:
+    // status: z.enum(["Pending", "Confirmed", "Rejected", "Completed"]).default("Pending"),
+    if (status === 'Confirmed' && existingReg?.status !== 'Confirmed') {
       try {
-        if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "re_your_api_key") {
-          await resend.emails.send({
-            from: 'NiKii Admissions <onboarding@resend.dev>',
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+          await transporter.sendMail({
+            from: `"NiKii Admissions" <${process.env.EMAIL_USER}>`,
             to: reg.email,
             subject: 'Admission Confirmed - NiKii Computer Academy',
             html: `
               <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
-                <div style="background-color: #2563eb; color: white; padding: 30px; text-align: center;">
-                  <!-- Replace the src below with your hosted logo URL (e.g., https://yourdomain.com/Edu_Logo.png) -->
-                  <img src="https://via.placeholder.com/150x60/2563eb/ffffff?text=NiKii+Academy" alt="NiKii Computer Academy Logo" style="height: 60px; margin-bottom: 15px; border-radius: 4px;" />
-                  <h1 style="margin: 0; font-size: 24px;">NiKii Computer Academy</h1>
+                <div style="background-color: #ff7e00; color: white; padding: 30px; text-align: center;">
+                  <h1 style="margin: 0; font-size: 24px;">NiKii COMPUTER ACADEMY</h1>
                   <p style="margin: 5px 0 0; font-size: 14px; opacity: 0.9;">State and Central Certified Academy • Anthiyur</p>
                 </div>
                 <div style="padding: 40px; background-color: #ffffff;">
-                  <h2 style="color: #1e40af; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; text-align: center; text-transform: uppercase; letter-spacing: 1px; font-size: 18px;">Provisional Admission Letter</h2>
+                  <h2 style="color: #ff7e00; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; text-align: center; text-transform: uppercase; letter-spacing: 1px; font-size: 18px;">Admission Form</h2>
                   
                   <div style="margin: 20px 0; display: flex; justify-content: space-between; align-items: flex-start; font-size: 14px; color: #666;">
                     <div style="flex: 1;">
+                      <p><strong>Student Id:</strong> REG-${reg.id.toString().padStart(4, '0')}</p>
                       <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                      <p><strong>Ref ID:</strong> #REG-${reg.id.toString().padStart(4, '0')}</p>
                     </div>
                     <div style="width: 100px; height: 120px; border: 2px dashed #cbd5e1; border-radius: 4px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 10px; color: #94a3b8; background-color: #f8fafc; margin-left: 20px;">
                       Paste Student<br/>Photo Here
@@ -609,13 +753,13 @@ app.put("/api/registrations/:id/status", verifyAdmin, async (req: any, res: any)
 
                   <p style="margin-top: 25px;">We are pleased to inform you that your admission to the following program has been <strong>confirmed</strong>:</p>
 
-                  <div style="background-color: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0; border: 1px solid #edf2f7;">
-                    <h3 style="margin-top: 0; font-size: 14px; color: #475569; text-transform: uppercase;">Program Details</h3>
+                  <div style="background-color: #f0fdf4; padding: 20px; border-radius: 6px; margin: 20px 0; border: 1px solid #bbf7d0;">
+                    <h3 style="margin-top: 0; font-size: 14px; color: #15803d; text-transform: uppercase;">Course Details</h3>
                     <p style="margin: 10px 0 5px;"><strong>Course Name:</strong> ${reg.courseSelected}</p>
                     <p style="margin: 0;"><strong>Batch Time:</strong> ${reg.preferredBatchTime}</p>
                   </div>
 
-                  <h3 style="font-size: 15px; color: #1e40af; margin-top: 30px;">IMPORTANT INSTRUCTIONS:</h3>
+                  <h3 style="font-size: 15px; color: #ff7e00; margin-top: 30px;">IMPORTANT INSTRUCTIONS:</h3>
                   <ol style="padding-left: 20px; color: #4b5563; line-height: 1.6; font-size: 14px;">
                     <li>Please report to the academy on your scheduled batch time.</li>
                     <li>Bring <strong>original Aadhaar Card</strong> and <strong>2 Passport size photographs</strong>.</li>
@@ -623,15 +767,7 @@ app.put("/api/registrations/:id/status", verifyAdmin, async (req: any, res: any)
                     <li>Minimum <strong>85% attendance</strong> is mandatory for certification.</li>
                   </ol>
 
-                  <div style="background-color: #f0f7ff; padding: 15px; border-radius: 6px; margin: 25px 0; border: 1px solid #bee3f8; font-size: 13px;">
-                    <strong style="color: #2c5282;">🌐 Digital Access & Resources:</strong><br/>
-                    <div style="margin-top: 5px;">
-                      Official Website: <a href="https://nikiidigital.in/" style="color: #2563eb; font-weight: bold; text-decoration: none;">nikiidigital.in</a><br/>
-                      Student Portal: <a href="https://nikiicomputeracademynca.onrender.com/" style="color: #2563eb; font-weight: bold; text-decoration: none;">NCA Academy Portal</a>
-                    </div>
-                  </div>
-
-                  <div style="margin-top: 40px; text-align: right; color: #1e40af;">
+                  <div style="margin-top: 40px; text-align: right; color: #ff7e00;">
                      <p style="margin-bottom: 0;"><strong>Authorized Signatory</strong></p>
                      <p style="margin-top: 5px; font-size: 13px; color: #64748b;">NiKii Computer Academy, Anthiyur.</p>
                   </div>
@@ -642,16 +778,21 @@ app.put("/api/registrations/:id/status", verifyAdmin, async (req: any, res: any)
               </div>
             `
           });
+          console.log(`Confirmation email sent to ${reg.email}`);
         }
       } catch (emailErr) {
         console.error("Confirmation email failed:", emailErr);
       }
 
-      // Send WhatsApp Confirmation
-      await sendWhatsAppNotification(
-        reg.mobileNumber,
-        `✅ *PROVISIONAL ADMISSION LETTER* ✅\n\nDear *${reg.fullName}*,\n\nCongratulations! We are pleased to inform you that your admission at *NiKii Computer Academy* has been officially *CONFIRMED!* 🥳🎊\n\n📝 *Enrollment Details:*\n--------------------------\n🆔 *Ref ID:* #REG-${reg.id.toString().padStart(4, '0')}\n🎓 *Program:* ${reg.courseSelected}\n🕒 *Batch:* ${reg.preferredBatchTime}\n--------------------------\n\n🚀 *Important Instructions:*\n1️⃣ Bring *Original Aadhaar Card*.\n2️⃣ Bring *2 Passport size photos*.\n3️⃣ *85% Attendance* is mandatory for certification.\n4️⃣ Fees are non-refundable after commencement.\n5️⃣ Be present 10 mins before your batch time.\n\n🌐 *Official Links:*\n- Website: https://nikiidigital.in/\n- Portal: https://nikiicomputeracademynca.onrender.com/\n\nWe are excited to help you transform your skills! See you soon. 💻✨\n\n📍 *Location:* Near Anthiyur Bus Stand, Anthiyur.\n📞 *Support:* +91 80155 99681\n\n*Education is the Power of Life!* 🚀`
-      );
+      // Send WhatsApp Confirmation ONLY if first time confirming
+      try {
+        await sendWhatsAppNotification(
+          reg.mobileNumber,
+          `✅ *PROVISIONAL ADMISSION LETTER* ✅\n\nDear *${reg.fullName}*,\n\nCongratulations! We are pleased to inform you that your admission at *NiKii Computer Academy* has been officially *CONFIRMED!* 🥳🎊\n\n📝 *Enrollment Details:*\n--------------------------\n🆔 *Ref ID:* #REG-${reg.id.toString().padStart(4, '0')}\n🎓 *Program:* ${reg.courseSelected}\n🕒 *Batch:* ${reg.preferredBatchTime}\n--------------------------\n\n🚀 *Important Instructions:*\n1️⃣ Bring *Original Aadhaar Card*.\n2️⃣ Bring *2 Passport size photos*.\n3️⃣ *85% Attendance* is mandatory for certification.\n4️⃣ Fees are non-refundable after commencement.\n5️⃣ Be present 10 mins before your batch time.\n\n🌐 *Official Links:*\n- Website: https://nikiidigital.in/\n- Portal: https://nikiicomputeracademynca.onrender.com/\n\nWe are excited to help you transform your skills! See you soon. 💻✨\n\n📍 *Location:* Near Anthiyur Bus Stand, Anthiyur.\n📞 *Support:* +91 80155 99681\n\n*Education is the Power of Life!* 🚀`
+        );
+      } catch (waErr) {
+        console.error("WhatsApp confirmation failed:", waErr);
+      }
     }
 
     res.json({ ok: true });
@@ -1014,7 +1155,7 @@ app.get("/api/registrations.csv", verifyAdmin, async (req: any, res: any) => {
 
     const headers = [
       "id", "fullName", "email", "gender", "dateOfBirth", "address",
-      "highestQualification", "schoolCollegeName", "yearOfStudy",
+      "schoolCollegeName", "yearOfStudy",
       "mobileNumber", "preferredBatchTime", "courseSelected",
       "howDidYouHear", "paymentMode", "createdAt"
     ];
@@ -1164,6 +1305,90 @@ app.post("/api/admin/check-absentees", verifyAdmin, async (req: any, res: any) =
   }
 });
 
+// --- Individual Staff Management (Admin Only) ---
+
+app.get("/api/admin/staff", verifyAdmin, async (req: any, res: any) => {
+  try {
+    const { data, error } = await supabase.from('staff_accounts').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ staff: data || [] });
+  } catch (err) {
+    console.error("GET /api/admin/staff error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/api/admin/staff", verifyAdmin, async (req: any, res: any) => {
+  const { username, password, full_name } = req.body;
+  if (!username || !password || !full_name) return res.status(400).json({ error: "Missing required fields" });
+
+  try {
+    const { data, error } = await supabase
+      .from('staff_accounts')
+      .insert({ username, password, full_name, created_at: new Date().toISOString() })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') return res.status(400).json({ error: "Username already exists" });
+      throw error;
+    }
+    res.json({ ok: true, staff: data });
+  } catch (err) {
+    console.error("POST /api/admin/staff error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.delete("/api/admin/staff/:id", verifyAdmin, async (req: any, res: any) => {
+  try {
+    const { error } = await supabase.from('staff_accounts').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.put("/api/admin/staff/:id/password", verifyAdmin, async (req: any, res: any) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: "Password is required" });
+
+  try {
+    const { error } = await supabase
+      .from('staff_accounts')
+      .update({ password })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/api/admin/update-key", verifyAdmin, async (req: any, res: any) => {
+  const { newAdminKey } = req.body;
+  if (!newAdminKey || newAdminKey.length < 8) {
+    return res.status(400).json({ error: "Access Key must be at least 8 characters long" });
+  }
+
+  try {
+    const { error } = await supabase
+      .from('settings')
+      .upsert({ key: 'admin_key', value: newAdminKey });
+
+    if (error) throw error;
+    
+    invalidateAdminKeyCache();
+    console.log("🔐 Admin Access Key updated and cache invalidated.");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/update-key error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 app.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`NikiiDigital API running on port ${PORT}`);
 });
@@ -1208,10 +1433,10 @@ app.post("/api/registrations/:id/certificate-notify", verifyAdmin, async (req: a
 
     // Send Email
     try {
-      if (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "re_your_api_key") {
-        await resend.emails.send({
-          from: 'NiKii Academy <onboarding@resend.dev>',
-          to: 'rajeshrcb1817@gmail.com', // Overridden for Resend Sandbox restrictions (originally reg.email)
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        await transporter.sendMail({
+          from: `"NiKii Academy" <${process.env.EMAIL_USER}>`,
+          to: reg.email,
           subject: `Congratulations! Your Certificate is Ready - ${reg.courseSelected}`,
           html: `
             <div style="font-family: sans-serif; padding: 30px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px; margin: 0 auto;">
@@ -1230,6 +1455,7 @@ app.post("/api/registrations/:id/certificate-notify", verifyAdmin, async (req: a
             </div>
           `
         });
+        console.log("Certificate notification Email dispatched successfully via Nodemailer.");
       }
     } catch (e) {
       console.error("Certificate email failed:", e);

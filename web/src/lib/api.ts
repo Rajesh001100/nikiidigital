@@ -69,7 +69,7 @@ export async function deleteRegistration(adminKey: string, id: number) {
   })
 }
 
-export async function updateRegistrationStatus(adminKey: string, id: number, status: 'Pending' | 'Confirmed' | 'Rejected', discount_amount?: number) {
+export async function updateRegistrationStatus(adminKey: string, id: number, status: 'Pending' | 'Confirmed' | 'Rejected' | 'Completed', discount_amount?: number) {
   return apiFetch<{ ok: true }>(`/api/registrations/${id}/status`, {
     method: 'PUT',
     adminKey,
@@ -212,10 +212,24 @@ export async function notifyCertificate(adminKey: string, id: number) {
 
 // --- Student Portal API ---
 
-export async function studentLogin(mobileNumber: string, dateOfBirth: string) {
-  return apiFetch<{ student: RegistrationRow }>('/api/student/login', {
+export async function studentLogin(mobileNumber: string, password: string) {
+  return apiFetch<{ students: RegistrationRow[] }>('/api/student/login', {
     method: 'POST',
-    body: JSON.stringify({ mobileNumber, dateOfBirth })
+    body: JSON.stringify({ mobileNumber, password })
+  })
+}
+
+export async function staffLogin(username: string, password: string) {
+  return apiFetch<{ ok: true; staffKey: string; fullName: string }>('/api/staff/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  })
+}
+
+export async function getStudentRegistrations(mobileNumber: string, password: string) {
+  return apiFetch<{ registrations: RegistrationRow[] }>('/api/student/registrations', {
+    method: 'POST',
+    body: JSON.stringify({ mobileNumber, password })
   })
 }
 
@@ -265,13 +279,48 @@ export async function deleteAdminMaterial(adminKey: string, id: number) {
   })
 }
 
-export async function getAdminAnalytics(adminKey: string) {
-  return apiFetch<AdminAnalytics>('/api/admin/analytics', { adminKey })
+export async function getAdminAnalytics(adminKey: string, academicYear?: string) {
+  return apiFetch<AdminAnalytics>(`/api/admin/analytics${academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : ''}`, { adminKey })
 }
 
 export async function checkAbsentees(adminKey: string) {
   return apiFetch<{ ok: true; alertsSent: number }>('/api/admin/check-absentees', {
     method: 'POST',
     adminKey
+  })
+}
+
+export async function getAdminStaff(adminKey: string) {
+  return apiFetch<{ staff: any[] }>('/api/admin/staff', { adminKey })
+}
+
+export async function addAdminStaff(adminKey: string, staff: any) {
+  return apiFetch<{ ok: true; staff: any }>('/api/admin/staff', {
+    method: 'POST',
+    adminKey,
+    body: JSON.stringify(staff)
+  })
+}
+
+export async function deleteAdminStaff(adminKey: string, id: number) {
+  return apiFetch<{ ok: true }>(`/api/admin/staff/${id}`, {
+    method: 'DELETE',
+    adminKey
+  })
+}
+
+export async function updateAdminStaffPassword(adminKey: string, id: number, data: { password: string }) {
+  return apiFetch<{ ok: true }>(`/api/admin/staff/${id}/password`, {
+    method: 'PUT',
+    adminKey,
+    body: JSON.stringify(data)
+  })
+}
+
+export async function updateAdminKey(adminKey: string, newAdminKey: string) {
+  return apiFetch<{ ok: true }>('/api/admin/update-key', {
+    method: 'POST',
+    adminKey,
+    body: JSON.stringify({ newAdminKey })
   })
 }

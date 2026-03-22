@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react'
-import { getRegistrations, deleteAllRegistrations, deleteRegistration, registrationsCsvUrl, paymentsCsvUrl, getCourses, createCourse, updateCourse, deleteCourse, updateRegistrationStatus, getSettings, updateSettings, getAttendance, updateAttendance, notifyCertificate, getAdminAnalytics, updateRegistration, getAdminMaterials, addAdminMaterial, deleteAdminMaterial, getAdminPayments, addAdminPayment } from '../lib/api'
+import { getRegistrations, deleteAllRegistrations, deleteRegistration, registrationsCsvUrl, paymentsCsvUrl, getCourses, createCourse, updateCourse, deleteCourse, updateRegistrationStatus, getSettings, updateSettings, getAttendance, updateAttendance, notifyCertificate, getAdminAnalytics, updateRegistration, getAdminMaterials, addAdminMaterial, deleteAdminMaterial, getAdminPayments, addAdminPayment, getAdminStaff, addAdminStaff, deleteAdminStaff, updateAdminStaffPassword, updateAdminKey } from '../lib/api'
 import type { RegistrationRow, Course, AdminAnalytics, Material, Payment } from '../types'
-import { LayoutDashboard, Users, BookOpen, Download, Plus, Trash2, Edit3, CheckCircle2, Settings, FileText, Send, Award } from 'lucide-react'
+import { LayoutDashboard, Users, BookOpen, Download, Plus, Trash2, Edit3, CheckCircle2, Settings, FileText, Send, Award, ShieldCheck, Key, Lock, UserPlus, UserMinus, ShieldAlert } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
 type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'loaded'; rows: RegistrationRow[]; courses: Course[]; settings: any; attendance: any[]; analytics: AdminAnalytics; materials: Material[]; payments: Payment[]; paymentSummary: { totalFullCount: number; totalInstalment1Count: number; pendingInst2Count: number; totalRevenue: number }; pendingSecondInstalment: Payment[] }
+  | { status: 'loaded'; rows: RegistrationRow[]; courses: Course[]; settings: any; attendance: any[]; analytics: AdminAnalytics; materials: Material[]; payments: Payment[]; paymentSummary: { totalFullCount: number; totalInstalment1Count: number; pendingInst2Count: number; totalRevenue: number }; pendingSecondInstalment: Payment[]; staff: any[] }
   | { status: 'error'; message: string }
 
 const STORAGE_KEY = 'nikiidigital_admin_key'
 
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem(STORAGE_KEY) ?? '')
-  const [activeTab, setActiveTab] = useState<'stats' | 'regs' | 'courses' | 'attendance' | 'certificates' | 'settings' | 'analytics' | 'payments'>('stats')
+  const [activeTab, setActiveTab] = useState<'stats' | 'regs' | 'courses' | 'attendance' | 'certificates' | 'settings' | 'analytics' | 'payments' | 'staff'>('stats')
   const [selectedCourseForMaterials, setSelectedCourseForMaterials] = useState<Course | null>(null)
   const [featuresTempString, setFeaturesTempString] = useState('')
   const [paymentForm, setPaymentForm] = useState<{
@@ -46,6 +46,8 @@ export default function AdminPage() {
   // Attendance State
   const [selectedBatch, setSelectedBatch] = useState('Batch - I (9.30am - 11.30am)')
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
+  const [stagedAttendance, setStagedAttendance] = useState<Record<number, string>>({})
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false)
 
   // Course Form State
   const [isEditingCourse, setIsEditingCourse] = useState<Course | null>(null)
@@ -71,7 +73,7 @@ export default function AdminPage() {
     academicYears: ['2026-2027'],
     currentAcademicYear: '2026-2027'
   })
-  const [selectedYear, setSelectedYear] = useState('')
+  const [selectedYear, setSelectedYear] = useState(() => localStorage.getItem('nikiidigital_admin_year') ?? '')
   const [overviewDate, setOverviewDate] = useState(new Date().toISOString().split('T')[0])
 
   // Search & Filter State
@@ -82,8 +84,14 @@ export default function AdminPage() {
   const [payRecSearch, setPayRecSearch] = useState('')
   const [payRecBatchFilter, setPayRecBatchFilter] = useState('All Batches')
 
+  // Staff Account Form
+  const [staffForm, setStaffForm] = useState({ username: '', password: '', full_name: '' })
+  const [isAddingStaff, setIsAddingStaff] = useState(false)
+  const [adminKeyUpdate, setAdminKeyUpdate] = useState({ current: '', new: '', confirm: '' })
+
   const registrations = state.status === 'loaded' ? state.rows : []
   const courses = state.status === 'loaded' ? state.courses : []
+  const attendance = state.status === 'loaded' ? state.attendance : []
 
   async function load(keyOverride?: string, yearOverride?: string) {
     const key = keyOverride ?? adminKey
@@ -97,13 +105,14 @@ export default function AdminPage() {
       if (!selectedYear) setSelectedYear(activeYear);
       if (sett) setSettingsForm(sett);
 
-      const [r, c, att, ana, mat, pay] = await Promise.all([
+      const [r, c, att, ana, mat, pay, staffRes] = await Promise.all([
         getRegistrations(key, activeYear),
         getCourses(),
         getAttendance(key, attendanceDate, activeYear),
-        getAdminAnalytics(key), // Note: didn't update api method sig for getAdminAnalytics ? Wait, I need to check api.ts if I updated getAdminAnalytics.
+        getAdminAnalytics(key, activeYear),
         getAdminMaterials(),
-        getAdminPayments(key, activeYear)
+        getAdminPayments(key, activeYear),
+        getAdminStaff(key)
       ])
       setState({
         status: 'loaded',
@@ -115,14 +124,15 @@ export default function AdminPage() {
         materials: mat.materials,
         payments: pay.payments,
         paymentSummary: pay.summary || { totalFullCount: 0, totalInstalment1Count: 0, pendingInst2Count: 0, totalRevenue: 0 },
-        pendingSecondInstalment: pay.pendingSecondInstalment || []
+        pendingSecondInstalment: pay.pendingSecondInstalment || [],
+        staff: Array.isArray(staffRes?.staff) ? staffRes.staff : []
       })
     } catch (e: unknown) {
       setState({ status: 'error', message: e instanceof Error ? e.message : 'Failed to load' })
     }
   }
 
-  async function handleUpdateStatus(id: number, newStatus: 'Pending' | 'Confirmed' | 'Rejected', discountAmount?: number) {
+  async function handleUpdateStatus(id: number, newStatus: 'Pending' | 'Confirmed' | 'Rejected' | 'Completed', discountAmount?: number) {
     try {
       await updateRegistrationStatus(adminKey, id, newStatus, discountAmount);
       void load(adminKey); // Refresh data
@@ -131,9 +141,79 @@ export default function AdminPage() {
     }
   }
 
+  async function handleUpdateAdminKey(e: React.FormEvent) {
+    e.preventDefault();
+    if (adminKeyUpdate.new !== adminKeyUpdate.confirm) {
+      alert("New keys do not match!");
+      return;
+    }
+    if (adminKeyUpdate.new.length < 8) {
+      alert("New access key must be at least 8 characters long.");
+      return;
+    }
+    if (!confirm("This will change your administrative access key and log you out. Proceed?")) return;
+
+    try {
+      await updateAdminKey(adminKey, adminKeyUpdate.new);
+      alert("Administrative Access Key updated successfully! Please login again with your new key.");
+      localStorage.removeItem('nikiidigital_admin_key');
+      window.location.reload();
+    } catch (err: any) {
+      alert(err.message || "Failed to update access key.");
+    }
+  }
+
+  async function handleAddStaff(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      await addAdminStaff(adminKey, staffForm);
+      setStaffForm({ username: '', password: '', full_name: '' });
+      setIsAddingStaff(false);
+      void load(adminKey);
+    } catch (err: any) {
+      alert(err.message || "Failed to add staff");
+    }
+  }
+
+  async function handleResetStaffPassword(id: number) {
+    const newPass = prompt("Enter new password for staff member:");
+    if (!newPass) return;
+    try {
+      await updateAdminStaffPassword(adminKey, id, { password: newPass });
+      alert("Staff password reset successfully!");
+      void load(adminKey);
+    } catch (err) {
+      alert("Failed to reset staff password");
+    }
+  }
+
+
+  async function handleDeleteStaff(id: number) {
+    if (!confirm("Delete this staff account?")) return;
+    try {
+      await deleteAdminStaff(adminKey, id);
+      void load(adminKey);
+    } catch (err) {
+      alert("Failed to delete staff");
+    }
+  }
+
   useEffect(() => {
     if (adminKey) void load(adminKey)
   }, [])
+
+  // Sync staged attendance when batch, date or data changes
+  useEffect(() => {
+    if (state.status !== 'loaded') return;
+    const newStaged: Record<number, string> = {};
+    const batchConfirmed = registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed');
+    
+    batchConfirmed.forEach(reg => {
+      const existing = state.attendance.find(a => a.registration_id === reg.id && a.date === attendanceDate);
+      newStaged[reg.id] = existing?.status || 'Present';
+    });
+    setStagedAttendance(newStaged);
+  }, [selectedBatch, attendanceDate, state.status, attendance]);
 
   async function handleCourseSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -325,13 +405,23 @@ export default function AdminPage() {
     doc.save(`registrations_${overviewDate}.pdf`)
   }
 
-  async function handleAttendanceToggle(registrationId: number, currentStatus: string) {
-    const newStatus = currentStatus === 'Present' ? 'Absent' : 'Present';
+  async function handleBatchAttendanceSave() {
+    const records = Object.entries(stagedAttendance).map(([regId, status]) => ({
+      registrationId: Number(regId),
+      status
+    }));
+    
+    if (records.length === 0) return;
+    
+    setIsSavingAttendance(true);
     try {
-      await updateAttendance(adminKey, attendanceDate, [{ registrationId, status: newStatus }]);
+      await updateAttendance(adminKey, attendanceDate, records);
+      alert('Attendance recorded for ' + records.length + ' students');
       void load(adminKey);
-    } catch (err) {
-      alert("Attendance update failed");
+    } catch {
+      alert('Attendance update failed');
+    } finally {
+      setIsSavingAttendance(false);
     }
   }
 
@@ -428,72 +518,172 @@ export default function AdminPage() {
   function generateAdmissionLetter(reg: RegistrationRow) {
     const doc = new jsPDF() as any;
 
-    // Header
-    doc.setFillColor(37, 99, 235);
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(24);
+    // --- HEADER SECTION ---
     doc.setFont("helvetica", "bold");
-    doc.text("NiKii Computer Academy", 105, 25, { align: "center" });
-
-    // Sub-header
     doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text("State and Central Certified Academy • Anthiyur", 105, 32, { align: "center" });
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Student Id : REG-${reg.id.toString().padStart(4, '0')}`, 20, 15);
+    doc.text(`Date : ${new Date().toLocaleDateString('en-IN')}`, 190, 15, { align: "right" });
 
-    // Content
-    doc.setTextColor(30, 41, 59);
-    doc.setFontSize(18);
-    doc.text("PROVISIONAL ADMISSION LETTER", 105, 60, { align: "center" });
+    doc.setFontSize(28);
+    doc.text("NiKii COMPUTER ACADEMY", 20, 30);
 
-    doc.setDrawColor(226, 232, 240);
-    doc.line(20, 65, 190, 65);
-
-    doc.setFontSize(12);
-    doc.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, 20, 75);
-    doc.text(`Ref ID: #REG-${reg.id.toString().padStart(4, '0')}`, 190, 75, { align: "right" });
-
+    doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.text(`To, ${reg.fullName}`, 20, 90);
+    doc.text("A Central government Registered", 20, 38);
+    doc.text("State Government and CSC certified", 20, 43);
+
     doc.setFont("helvetica", "normal");
-    doc.text(`Email: ${reg.email}`, 20, 96);
-    doc.text(`Mobile: ${reg.mobileNumber}`, 20, 102);
-
-    doc.text("We are pleased to inform you that your admission to the following program has been confirmed:", 20, 115);
-
-    // Course Details Box
-    doc.setFillColor(248, 250, 252);
-    doc.rect(20, 125, 170, 40, 'F');
-    doc.setFont("helvetica", "bold");
-    doc.text("PROGRAM DETAILS", 30, 135);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Course Name: ${reg.courseSelected}`, 30, 145);
-    doc.text(`Batch Time: ${reg.preferredBatchTime}`, 30, 155);
-
-    // Important Instructions
-    doc.setFont("helvetica", "bold");
-    doc.text("IMPORTANT INSTRUCTIONS:", 20, 180);
-    doc.setFont("helvetica", "normal");
-    const instructions = [
-      "1. Please report to the academy on your scheduled batch time.",
-      "2. Bring original Aadhar Card and 2 Passport size photographs.",
-      "3. All fees are non-refundable after the course commencement.",
-      "4. Minimum 85% attendance is mandatory for certification."
-    ];
-    doc.text(instructions, 20, 190);
-
-    // Signature
-    doc.setFont("helvetica", "bold");
-    doc.text("Authorized Signatory", 150, 240);
     doc.setFontSize(8);
-    doc.text("Nikii Computer Academy, Athiyur.", 150, 245);
+    const address = [
+      "104, BHAVANI MAIN ROAD, UTHAYAM DEPARTMENT, ABOVE 1ST FLOOR,",
+      "ANTHIYUR, ERODE DISTRICT - 638 501.",
+      `Email: nikiiacademy@gmail.com`,
+      `Ph : 9750534434 , 9865320076`
+    ];
+    doc.text(address, 20, 50);
+
+    // Photo Box
+    doc.setDrawColor(0, 0, 0);
+    doc.rect(160, 25, 30, 40);
+    doc.setFontSize(7);
+    doc.text("Affix Passport", 175, 43, { align: "center" });
+    doc.text("Size Photo", 175, 47, { align: "center" });
+
+    // --- TITLE SECTION ---
+    doc.setFillColor(255, 126, 0); // Orange
+    doc.rect(75, 75, 60, 10, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("ADMISSION FORM", 105, 82, { align: "center" });
+
+    // --- PERSONAL DETAILS SECTION ---
+    doc.setFillColor(34, 197, 94); // Green
+    doc.rect(20, 95, 170, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(11);
+    doc.text("PERSONAL DETAILS", 25, 101);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    
+    let y = 115;
+    const fieldX = 20;
+    const labelX = 65;
+    const col2X = 110;
+    const label2X = 145;
+
+    // Row 1: Name
+    doc.setFont("helvetica", "bold");
+    doc.text("Name of the Student", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${reg.fullName.toUpperCase()}`, labelX, y);
+    y += 10;
+
+    // Row 2: Father's Name
+    doc.setFont("helvetica", "bold");
+    doc.text("Father's / Guardian Name", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${(reg.fatherName || '').toUpperCase()}`, labelX, y);
+    y += 10;
+
+    // Row 3: DOB & Religion
+    doc.setFont("helvetica", "bold");
+    doc.text("Date of Birth", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${reg.dateOfBirth}`, labelX, y);
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Religion     :", col2X, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${(reg.religion || '').toUpperCase()}`, label2X, y);
+    y += 10;
+
+    // Row 4: Nationality
+    doc.setFont("helvetica", "bold");
+    doc.text("Nationality", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${(reg.nationality || 'INDIAN').toUpperCase()}`, labelX, y);
+    y += 10;
+
+    // Row 5: Mobile & Gender
+    doc.setFont("helvetica", "bold");
+    doc.text("Mobile No", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${reg.mobileNumber}`, labelX, y);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Gender       :", col2X, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${reg.gender === 'Male' ? 'Male [X]  Female [ ]' : 'Male [ ]  Female [X]'}`, label2X, y);
+    y += 10;
+
+    // Row 6: Mail ID
+    doc.setFont("helvetica", "bold");
+    doc.text("Mail ID", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${reg.email}`, labelX, y);
+    y += 10;
+
+    // Row 7: Address
+    doc.setFont("helvetica", "bold");
+    doc.text("Address", fieldX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`:   ${reg.address.toUpperCase()}`, labelX, y);
+    y += 15;
+
+    // --- COURSE SECTION ---
+    doc.setFillColor(34, 197, 94); // Green
+    doc.rect(20, y, 170, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(11);
+    doc.text("COURSE", 25, y + 6);
+    y += 15;
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    
+    const projectCourses = [
+      "SCC", "KCA", "JCA", "DCA", "DCP", 
+      "DWD", "DDTP", "DFA", "DHN", "Tally"
+    ];
+
+    let cx = 20;
+    let cy = y;
+    projectCourses.forEach((c, i) => {
+      const isSelected = reg.courseSelected.includes(c) || 
+                         (c === "Tally" && reg.courseSelected.includes("Tally"));
+      
+      doc.text(`${c}  [${isSelected ? 'X' : ' '}]`, cx, cy);
+      cx += 35;
+      if ((i + 1) % 5 === 0) {
+        cx = 20;
+        cy += 8;
+      }
+    });
+
+    y = cy + 5;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Course Duration : ........................", 20, y);
+    doc.text("Batch No : ...................", 85, y);
+    doc.text(`Batch Time : ${reg.preferredBatchTime}`, 135, y);
+
+    // --- SIGNATURE SECTION ---
+    y = 270;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("Signature of Applicant", 20, y);
+    doc.text("Signature of Parent", 85, y);
+    doc.text("Management", 155, y);
 
     // Footer
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
     doc.text("This is a computer-generated document and does not require a physical signature.", 105, 285, { align: "center" });
 
-    doc.save(`Admission_Letter_${reg.fullName.replace(/\s+/g, '_')}.pdf`);
+    doc.save(`Admission_Form_${reg.fullName.replace(/\s+/g, '_')}.pdf`);
   }
 
   function generateCertificate(reg: RegistrationRow) {
@@ -661,6 +851,7 @@ export default function AdminPage() {
                 value={selectedYear}
                 onChange={(e) => {
                   setSelectedYear(e.target.value);
+                  localStorage.setItem('nikiidigital_admin_year', e.target.value);
                   void load(adminKey, e.target.value);
                 }}
                 className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
@@ -706,6 +897,7 @@ export default function AdminPage() {
                 { id: 'attendance', label: 'Attendance', icon: CheckCircle2 },
                 { id: 'courses', label: 'CMS', icon: BookOpen },
                 { id: 'certificates', label: 'Certificates', icon: Award },
+                { id: 'staff', label: 'Staff', icon: ShieldCheck },
                 { id: 'settings', label: 'Settings', icon: Settings }
               ].map(tab => (
                 <button
@@ -1313,6 +1505,7 @@ export default function AdminPage() {
                           <div className="flex flex-col gap-3">
                             <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit ${reg.status === 'Confirmed' ? 'bg-emerald-100 text-emerald-700' :
                               reg.status === 'Rejected' ? 'bg-red-100 text-red-700' :
+                              reg.status === 'Completed' ? 'bg-slate-900 text-white' :
                                 'bg-amber-100 text-amber-700'
                               }`}>
                               {reg.status}
@@ -1356,16 +1549,38 @@ export default function AdminPage() {
                                     Letter
                                   </button>
                                 )}
-                                <button
-                                  onClick={() => { if (confirm('Reset status to Pending?')) handleUpdateStatus(reg.id, 'Pending') }}
-                                  className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition flex items-center gap-1"
-                                  title="Reset to Pending"
-                                >
-                                  <i className="bi bi-arrow-counterclockwise" />
-                                  Reset
-                                </button>
-                              </div>
-                            )}
+                                {reg.status === 'Confirmed' && (
+                                  <button
+                                    onClick={() => { if (confirm('Mark this student as COMPLETED? They will be removed from future attendance lists.')) handleUpdateStatus(reg.id, 'Completed') }}
+                                    className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-200 transition"
+                                    title="Mark Course Completed"
+                                  >
+                                    <CheckCircle2 size={12} />
+                                    Complete
+                                  </button>
+                                )}
+                                  <button
+                                    onClick={() => { if (confirm('Reset status to Pending?')) handleUpdateStatus(reg.id, 'Pending') }}
+                                    className="text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition flex items-center gap-1"
+                                    title="Reset to Pending"
+                                  >
+                                    <i className="bi bi-arrow-counterclockwise" />
+                                    Reset
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (!confirm(`Permanently DELETE ${reg.fullName}? This will remove ALL registration, payment, and attendance data. This action cannot be undone.`)) return;
+                                      await deleteRegistration(adminKey, reg.id);
+                                      load(adminKey);
+                                    }}
+                                    className="text-[10px] font-black uppercase tracking-widest bg-red-50 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-100 transition flex items-center gap-1"
+                                    title="Permanently Delete Registration"
+                                  >
+                                    <Trash2 size={12} />
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
                           </div>
                         </td>
                       </tr>
@@ -1626,28 +1841,6 @@ export default function AdminPage() {
 
                 <div className="mb-6 flex items-center justify-between print:mb-10">
                   <h3 className="text-xl font-bold text-slate-900">Batch Members ({registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed').length})</h3>
-                  {registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed').length > 0 && (
-                    <button
-                      onClick={async () => {
-                        const batchStudents = registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed');
-                        const records = batchStudents.map(reg => ({
-                          registrationId: reg.id,
-                          status: (state.status === 'loaded' ? state.attendance.find(a => a.registration_id === reg.id)?.status ?? 'Present' : 'Present')
-                        }));
-                        try {
-                          await updateAttendance(adminKey, attendanceDate, records);
-                          alert('Attendance recorded successfully!');
-                          void load(adminKey);
-                        } catch {
-                          alert('Failed to record attendance');
-                        }
-                      }}
-                      className="print:hidden flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-black text-white hover:bg-emerald-700 transition shadow-lg shadow-emerald-100"
-                    >
-                      <CheckCircle2 size={14} />
-                      Record Attendance
-                    </button>
-                  )}
                 </div>
 
                 <table className="w-full text-left">
@@ -1663,7 +1856,6 @@ export default function AdminPage() {
                     {registrations
                       .filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed')
                       .map(reg => {
-                        const status = state.status === 'loaded' ? state.attendance.find(a => a.registration_id === reg.id)?.status ?? 'Present' : 'Present';
                         return (
                           <tr key={reg.id} className="print:break-inside-avoid">
                             <td className="px-6 py-4">
@@ -1679,21 +1871,21 @@ export default function AdminPage() {
                                   <input 
                                     type="radio" 
                                     name={`attendance-${reg.id}`} 
-                                    checked={status === 'Present'}
-                                    onChange={() => { if (status !== 'Present') handleAttendanceToggle(reg.id, status) }}
+                                    checked={stagedAttendance[reg.id] === 'Present'}
+                                    onChange={() => setStagedAttendance(prev => ({ ...prev, [reg.id]: 'Present' }))}
                                     className="h-4 w-4 bg-slate-100 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                   />
-                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${status === 'Present' ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'}`}>Present</span>
+                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${stagedAttendance[reg.id] === 'Present' ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'}`}>Present</span>
                                 </label>
                                 <label className="flex items-center gap-2 cursor-pointer group">
                                   <input 
                                     type="radio" 
                                     name={`attendance-${reg.id}`} 
-                                    checked={status === 'Absent'}
-                                    onChange={() => { if (status !== 'Absent') handleAttendanceToggle(reg.id, status) }}
+                                    checked={stagedAttendance[reg.id] === 'Absent'}
+                                    onChange={() => setStagedAttendance(prev => ({ ...prev, [reg.id]: 'Absent' }))}
                                     className="h-4 w-4 bg-slate-100 border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer"
                                   />
-                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${status === 'Absent' ? 'text-red-500' : 'text-slate-400 group-hover:text-slate-600'}`}>Absent</span>
+                                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${stagedAttendance[reg.id] === 'Absent' ? 'text-red-500' : 'text-slate-400 group-hover:text-slate-600'}`}>Absent</span>
                                 </label>
                               </div>
                               <div className="hidden print:block h-6 w-12 border-2 border-slate-200 rounded print:border-slate-400" />
@@ -1703,6 +1895,22 @@ export default function AdminPage() {
                       })}
                   </tbody>
                 </table>
+
+                {/* Batch Action at Bottom */}
+                <div className="mt-12 flex justify-center bg-slate-50 border border-slate-100 rounded-[2rem] p-10 print:hidden">
+                  <button
+                    onClick={handleBatchAttendanceSave}
+                    disabled={isSavingAttendance || registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed').length === 0}
+                    className="flex items-center gap-3 rounded-2xl bg-emerald-600 px-12 py-5 text-base font-black text-white hover:bg-emerald-700 transition shadow-2xl shadow-emerald-200 disabled:opacity-50 active:scale-95"
+                  >
+                    {isSavingAttendance ? (
+                      <div className="h-6 w-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={24} />
+                    )}
+                    {isSavingAttendance ? 'Recording Attendance...' : 'Record Batch Attendance'}
+                  </button>
+                </div>
 
                 {registrations.filter(r => r.preferredBatchTime === selectedBatch && r.status === 'Confirmed').length === 0 && (
                   <div className="py-20 text-center">
@@ -1784,11 +1992,57 @@ export default function AdminPage() {
               </div>
             </div>
           )}
-
-          {/* --- SETTINGS TAB --- */}
+                    {/* --- SETTINGS TAB --- */}
           {activeTab === 'settings' && (
             <div className="max-w-4xl space-y-8 animate-in slide-in-from-bottom-5 duration-500">
               <div className="grid gap-8 lg:grid-cols-2">
+                {/* General Info */}
+                <div className="lg:col-span-2 space-y-6 rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
+                  <h3 className="text-xl font-bold text-slate-900">General Information & Academic Year</h3>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Contact Number</label>
+                      <input
+                        value={settingsForm.contactNumber || ''}
+                        onChange={e => setSettingsForm({ ...settingsForm, contactNumber: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Academy Address</label>
+                      <input
+                        value={settingsForm.address || ''}
+                        onChange={e => setSettingsForm({ ...settingsForm, address: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Available Academic Years</label>
+                      <input
+                        value={(settingsForm.academicYears || ['2026-2027']).join(', ')}
+                        onChange={e => setSettingsForm({ ...settingsForm, academicYears: e.target.value.split(',').map((s: string) => s.trim()) })}
+                        placeholder="e.g. 2025-2026, 2026-2027"
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
+                      />
+                      <p className="text-[10px] font-medium text-slate-400">Comma separated list of academic years.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Current Active Year</label>
+                      <select
+                        value={settingsForm.currentAcademicYear || '2026-2027'}
+                        onChange={e => setSettingsForm({ ...settingsForm, currentAcademicYear: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
+                      >
+                         {(settingsForm.academicYears || ['2026-2027']).map((y: string) => (
+                           <option key={y} value={y}>{y}</option>
+                         ))}
+                      </select>
+                      <p className="text-[10px] font-medium text-slate-400">New registrations will be assigned to this year.</p>
+                    </div>
+                  </div>
+                </div>
+
+
                 <div className="space-y-6 rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
                   <h3 className="text-xl font-bold text-slate-900 flex items-center gap-3">
                     <BookOpen className="text-blue-600" size={24} />
@@ -1876,51 +2130,67 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                {/* Administrative Security */}
                 <div className="lg:col-span-2 space-y-6 rounded-[2.5rem] bg-white p-8 shadow-sm border border-slate-100">
-                  <h3 className="text-xl font-bold text-slate-900">General Information & Academic Year</h3>
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Contact Number</label>
-                      <input
-                        value={settingsForm.contactNumber || ''}
-                        onChange={e => setSettingsForm({ ...settingsForm, contactNumber: e.target.value })}
-                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
-                      />
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="h-12 w-12 rounded-2xl bg-amber-50 flex items-center justify-center">
+                      <ShieldAlert className="text-amber-500" size={28} />
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Academy Address</label>
-                      <input
-                        value={settingsForm.address || ''}
-                        onChange={e => setSettingsForm({ ...settingsForm, address: e.target.value })}
-                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Available Academic Years</label>
-                      <input
-                        value={(settingsForm.academicYears || ['2026-2027']).join(', ')}
-                        onChange={e => setSettingsForm({ ...settingsForm, academicYears: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
-                        placeholder="e.g. 2025-2026, 2026-2027"
-                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
-                      />
-                      <p className="text-[10px] font-medium text-slate-400">Comma separated list of academic years.</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Current Active Year</label>
-                      <select
-                        value={settingsForm.currentAcademicYear || '2026-2027'}
-                        onChange={e => setSettingsForm({ ...settingsForm, currentAcademicYear: e.target.value })}
-                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white transition outline-none"
-                      >
-                         {(settingsForm.academicYears || ['2026-2027']).map((y: string) => (
-                           <option key={y} value={y}>{y}</option>
-                         ))}
-                      </select>
-                      <p className="text-[10px] font-medium text-slate-400">New registrations will be assigned to this year.</p>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900">Administrative Security</h3>
+                      <p className="text-slate-500 text-sm">Update your primary administrative access key</p>
                     </div>
                   </div>
+                  
+                  <form onSubmit={handleUpdateAdminKey} className="grid gap-6 md:grid-cols-3 items-end">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Current Access Key</label>
+                      <input 
+                        type="password"
+                        required
+                        value={adminKeyUpdate.current} 
+                        onChange={e => setAdminKeyUpdate({ ...adminKeyUpdate, current: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500/50 transition outline-none" 
+                        placeholder="••••••••"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">New Access Key</label>
+                      <input 
+                        type="password"
+                        required
+                        value={adminKeyUpdate.new} 
+                        onChange={e => setAdminKeyUpdate({ ...adminKeyUpdate, new: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500/50 transition outline-none" 
+                        placeholder="Min 8 chars"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Confirm New Key</label>
+                      <input 
+                        type="password"
+                        required
+                        value={adminKeyUpdate.confirm} 
+                        onChange={e => setAdminKeyUpdate({ ...adminKeyUpdate, confirm: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500/50 transition outline-none" 
+                        placeholder="••••••••"
+                      />
+                    </div>
+                    <div className="md:col-span-3 flex justify-end pt-2">
+                      <button 
+                        type="submit"
+                        className="rounded-xl bg-amber-600 px-8 py-3.5 text-sm font-black text-white hover:bg-amber-700 transition shadow-xl shadow-amber-100"
+                      >
+                        Update Administrative Key
+                      </button>
+                    </div>
+                  </form>
+                  <p className="text-[10px] font-bold text-slate-400 italic mt-2">
+                    ⚠️ Note: Updating the access key will immediately override the environment variable and require all active administrators to re-log in.
+                  </p>
                 </div>
               </div>
+
               <div className="flex justify-end">
                 <button
                   onClick={handleSaveSettings}
@@ -1928,6 +2198,135 @@ export default function AdminPage() {
                 >
                   Save Changes
                 </button>
+              </div>
+            </div>
+          )}
+
+
+
+          {/* --- STAFF MANAGEMENT TAB --- */}
+          {activeTab === 'staff' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom-5 duration-500">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                    <ShieldCheck className="text-blue-600" size={32} />
+                    Staff Accounts
+                  </h3>
+                  <p className="text-slate-500 font-medium">Manage individual access for academy staff members</p>
+                </div>
+                <button
+                  onClick={() => setIsAddingStaff(!isAddingStaff)}
+                  className="flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-sm font-black text-white hover:bg-blue-700 transition shadow-xl shadow-blue-100"
+                >
+                  <UserPlus size={18} />
+                  {isAddingStaff ? 'Cancel' : 'Register New Staff'}
+                </button>
+              </div>
+
+              {isAddingStaff && (
+                <div className="rounded-[2.5rem] bg-white p-8 shadow-sm border border-blue-100 animate-in zoom-in-95 duration-300">
+                  <h4 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2">
+                    <UserPlus className="text-blue-600" size={20} />
+                    Create New Staff Account
+                  </h4>
+                  <form onSubmit={handleAddStaff} className="grid gap-6 md:grid-cols-3 items-end">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Full Name</label>
+                      <input
+                        required
+                        value={staffForm.full_name}
+                        onChange={e => setStaffForm({ ...staffForm, full_name: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
+                        placeholder="John Doe"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Username</label>
+                      <input
+                        required
+                        value={staffForm.username}
+                        onChange={e => setStaffForm({ ...staffForm, username: e.target.value })}
+                        className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
+                        placeholder="john_staff"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Initial Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                        <input
+                          required
+                          type="text"
+                          value={staffForm.password}
+                          onChange={e => setStaffForm({ ...staffForm, password: e.target.value })}
+                          className="w-full rounded-xl bg-slate-50 border-none pl-12 pr-4 py-2.5 text-sm font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition outline-none"
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+                    <div className="md:col-span-3 flex justify-end">
+                      <button type="submit" className="rounded-xl bg-blue-600 px-8 py-3 text-sm font-black text-white hover:bg-blue-700 transition">
+                        Add Staff Member
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              <div className="rounded-[2.5rem] bg-white overflow-hidden shadow-sm border border-slate-100">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-100">
+                    <tr>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Staff Member</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Username</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {(state.status === 'loaded' && state.staff) && state.staff.map((s: any) => (
+                      <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-black">
+                              {s.full_name?.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-bold text-slate-900">{s.full_name}</span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <code className="text-xs font-black text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">@{s.username}</code>
+                        </td>
+                        <td className="px-8 py-5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleResetStaffPassword(s.id)}
+                              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition"
+                              title="Reset Staff Password"
+                            >
+                              <Key size={12} />
+                              Reset Pass
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStaff(s.id)}
+                              className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                              title="Delete Staff Account"
+                            >
+                              <UserMinus size={20} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {state.status === 'loaded' && state.staff.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-8 py-12 text-center">
+                          <p className="text-slate-400 font-medium italic">No individual staff accounts created yet.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

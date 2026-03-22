@@ -7,7 +7,6 @@ export type RegistrationInput = {
   gender: string
   dateOfBirth: string
   address: string
-  highestQualification: string
   schoolCollegeName: string
   yearOfStudy: string
   mobileNumber: string
@@ -15,14 +14,17 @@ export type RegistrationInput = {
   courseSelected: string
   howDidYouHear: string
   paymentMode: string
-  status: 'Pending' | 'Confirmed' | 'Rejected'
+  status: 'Pending' | 'Confirmed' | 'Rejected' | 'Completed'
   promoCode?: string
+  discount_amount?: number
+  academic_year?: string
 }
 
 export type RegistrationRow = RegistrationInput & {
   id: number
   createdAt: string
   discount_amount?: number
+  password?: string
 }
 
 export type Course = {

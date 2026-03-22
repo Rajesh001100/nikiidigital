@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getStudentDashboard } from '../lib/api'
+import { getStudentDashboard, getStudentRegistrations } from '../lib/api'
 import type { StudentDashboardData } from '../types'
 import {
     BarChart3,
@@ -19,33 +19,46 @@ import {
 
 export default function StudentDashboardPage() {
     const [data, setData] = useState<StudentDashboardData | null>(null)
+    const [allRegistrations, setAllRegistrations] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'payments' | 'materials'>('overview')
+    const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'payments' | 'materials' | 'history'>('overview')
     const navigate = useNavigate()
 
-    useEffect(() => {
-        async function load() {
-            const stored = localStorage.getItem('nikiidigital_student')
-            if (!stored) {
-                navigate('/student/login')
-                return
-            }
-            const student = JSON.parse(stored)
-            try {
-                const dashboard = await getStudentDashboard(student.id)
-                setData(dashboard)
-            } catch (err) {
-                console.error(err)
-            } finally {
-                setLoading(false)
-            }
+    async function load() {
+        const stored = localStorage.getItem('nikiidigital_student')
+        if (!stored) {
+            navigate('/student/login')
+            return
         }
+        const student = JSON.parse(stored)
+        setLoading(true)
+        try {
+            const [dashboard, regs] = await Promise.all([
+                getStudentDashboard(student.id),
+                getStudentRegistrations(student.mobileNumber, student.dateOfBirth)
+            ])
+            setData(dashboard)
+            setAllRegistrations(regs.registrations)
+        } catch (err) {
+            console.error(err)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    useEffect(() => {
         void load()
     }, [navigate])
 
     function handleLogout() {
         localStorage.removeItem('nikiidigital_student')
         navigate('/student/login')
+    }
+
+    function switchAccount(reg: any) {
+        localStorage.setItem('nikiidigital_student', JSON.stringify(reg))
+        load()
+        setActiveTab('overview')
     }
 
     if (loading) {
@@ -75,7 +88,12 @@ export default function StudentDashboardPage() {
                             <span className="text-2xl font-bold text-blue-400">{student.fullName.charAt(0)}</span>
                         </div>
                         <div>
-                            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-1">Welcome, {student.fullName}</h1>
+                            <div className="flex items-center gap-3 mb-1">
+                                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Welcome, {student.fullName}</h1>
+                                <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-blue-100">
+                                    {student.academic_year || '2026-2027'}
+                                </span>
+                            </div>
                             <div className="flex items-center gap-3 text-slate-500 text-sm">
                                 <span className="flex items-center gap-1.5"><BookOpen className="w-4 h-4" /> {student.courseSelected}</span>
                                 <span className="w-1 h-1 bg-gray-600 rounded-full" />
@@ -94,13 +112,13 @@ export default function StudentDashboardPage() {
 
             <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-8">
                 {/* Sidebar Navigation */}
-                {/* Mobile: horizontal scrollable tabs | Desktop: vertical sidebar */}
                 <div className="flex overflow-x-auto gap-2 pb-1 md:hidden">
                     {[
                         { id: 'overview', label: 'Overview', icon: BarChart3 },
                         { id: 'attendance', label: 'Attendance', icon: Calendar },
                         { id: 'payments', label: 'Fee Payments', icon: CreditCard },
                         { id: 'materials', label: 'Materials', icon: FileText },
+                        { id: 'history', label: 'My Admissions', icon: Clock },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -115,13 +133,13 @@ export default function StudentDashboardPage() {
                         </button>
                     ))}
                 </div>
-                {/* Desktop vertical nav */}
                 <div className="hidden md:flex md:flex-col md:space-y-3">
                     {[
                         { id: 'overview', label: 'Overview', icon: BarChart3 },
                         { id: 'attendance', label: 'Attendance', icon: Calendar },
                         { id: 'payments', label: 'Fee Payments', icon: CreditCard },
                         { id: 'materials', label: 'Materials', icon: FileText },
+                        { id: 'history', label: 'My Admissions', icon: Clock },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -137,7 +155,6 @@ export default function StudentDashboardPage() {
                     ))}
                 </div>
 
-                {/* Main Content Area */}
                 <div className="md:col-span-3 space-y-8">
 
                     {activeTab === 'overview' && (
@@ -378,6 +395,58 @@ export default function StudentDashboardPage() {
                                     <p className="text-sm max-w-[250px] mt-1 italic">Materials will be uploaded soon by your instructor.</p>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-100">
+                                    <h3 className="text-xl font-black text-slate-900">Your Admission History</h3>
+                                    <p className="text-sm text-slate-400 mt-1">Found {allRegistrations.length} total registrations for this account.</p>
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    {allRegistrations.map((reg) => (
+                                        <div
+                                            key={reg.id}
+                                            className={`group relative p-6 rounded-3xl border-2 transition-all ${reg.id === student.id ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-md'}`}
+                                        >
+                                            <div className="flex flex-col md:flex-row justify-between gap-4">
+                                                <div>
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <h4 className="text-lg font-black text-slate-900 group-hover:text-blue-600 transition-colors">{reg.courseSelected}</h4>
+                                                        <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-md border ${reg.status === 'Confirmed' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+                                                            {reg.status}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs font-bold text-slate-400">
+                                                        <p>ID: <span className="text-slate-600">#REG-{reg.id.toString().padStart(4, '0')}</span></p>
+                                                        <p>YEAR: <span className="text-slate-600">{reg.academic_year || '2026-2027'}</span></p>
+                                                        <p>BATCH: <span className="text-slate-600">{reg.preferredBatchTime}</span></p>
+                                                        <p>DATE: <span className="text-slate-600">{new Date(reg.createdAt).toLocaleDateString()}</span></p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {reg.id === student.id ? (
+                                                        <div className="flex items-center gap-2 text-blue-600 font-black text-xs uppercase tracking-widest bg-white px-4 py-2 rounded-xl border border-blue-100">
+                                                            <CheckCircle2 className="w-4 h-4" /> Currently Viewing
+                                                        </div>
+                                                    ) : reg.status === 'Confirmed' ? (
+                                                        <button
+                                                            onClick={() => switchAccount(reg)}
+                                                            className="px-6 py-3 bg-white hover:bg-blue-600 text-slate-600 hover:text-white font-black text-xs uppercase tracking-widest rounded-xl border-2 border-slate-100 hover:border-blue-600 transition-all shadow-sm"
+                                                        >
+                                                            Switch Dashboard
+                                                        </button>
+                                                    ) : (
+                                                        <p className="text-[10px] italic text-slate-400 font-bold max-w-[150px] leading-tight">Dashboard becomes available once admission is confirmed.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                             </div>
                         </div>
                     )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getRegistrations, getAdminPayments, addAdminPayment, getAttendance, updateAttendance, getCourses, getSettings } from '../lib/api'
+import { getRegistrations, getAdminPayments, addAdminPayment, getAttendance, updateAttendance, getCourses, getSettings, staffLogin } from '../lib/api'
 import type { RegistrationRow, Payment, Course } from '../types'
 import { Users, Send, CheckCircle2, Search, X } from 'lucide-react'
 
@@ -15,6 +15,9 @@ type LoadState =
 
 export default function StaffPage() {
   const [staffKey, setStaffKey] = useState(() => localStorage.getItem(STAFF_KEY_LS) ?? '')
+  const [loginUsername, setLoginUsername] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('students')
   const [state, setState] = useState<LoadState>({ status: 'idle' })
   const [search, setSearch] = useState('')
@@ -28,6 +31,8 @@ export default function StaffPage() {
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedBatch, setSelectedBatch] = useState('Batch - I (9.30am - 11.30am)')
   const [selectedYear, setSelectedYear] = useState('')
+  const [stagedAttendance, setStagedAttendance] = useState<Record<number, string>>({})
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false)
 
 
   // Payment form state
@@ -86,10 +91,30 @@ export default function StaffPage() {
   useEffect(() => {
     if (state.status === 'loaded' && selectedYear && staffKey) {
       getAttendance(staffKey, attendanceDate, selectedYear)
-        .then(att => setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s))
+        .then(att => {
+          setState(s => {
+            if (s.status === 'loaded') {
+              return { ...s, attendance: att.attendance };
+            }
+            return s;
+          });
+        })
         .catch(() => {})
     }
   }, [attendanceDate, selectedYear])
+
+  // Sync staged attendance when batch, date or data changes
+  useEffect(() => {
+    if (state.status !== 'loaded') return;
+    const newStaged: Record<number, string> = {};
+    const batchConfirmed = confirmedRegs.filter(r => r.preferredBatchTime === selectedBatch);
+    
+    batchConfirmed.forEach(reg => {
+      const existing = attendance.find(a => a.registration_id === reg.id && a.date === attendanceDate);
+      newStaged[reg.id] = existing?.status || 'Present';
+    });
+    setStagedAttendance(newStaged);
+  }, [selectedBatch, attendanceDate, state.status, attendance]);
 
   // Security Guards: Anti-Screenshot, Anti-Copy, Anti-F12
   useEffect(() => {
@@ -131,34 +156,25 @@ export default function StaffPage() {
     };
   }, [staffKey]);
 
-  async function handleAttendanceSet(registrationId: number, newStatus: string) {
-    // Optimistic Update
-    setState(s => {
-      if (s.status !== 'loaded') return s
-      const newAttendance = [...s.attendance]
-      const idx = newAttendance.findIndex(a => a.registration_id === registrationId && a.date === attendanceDate)
-      if (idx !== -1) {
-        newAttendance[idx] = { ...newAttendance[idx], status: newStatus }
-      } else {
-        newAttendance.push({
-          registration_id: registrationId,
-          date: attendanceDate,
-          status: newStatus
-        })
-      }
-      return { ...s, attendance: newAttendance }
-    })
-
+  async function handleBatchAttendanceSave() {
+    const records = Object.entries(stagedAttendance).map(([regId, status]) => ({
+      registrationId: Number(regId),
+      status
+    }));
+    
+    if (records.length === 0) return;
+    
+    setIsSavingAttendance(true);
     try {
-      await updateAttendance(staffKey, attendanceDate, [{ registrationId, status: newStatus }])
-      // Refetch in background to ensure consistency
-      const att = await getAttendance(staffKey, attendanceDate, selectedYear)
-      setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s)
+      await updateAttendance(staffKey, attendanceDate, records);
+      // Refetch to ensure everything is in sync
+      const att = await getAttendance(staffKey, attendanceDate, selectedYear);
+      setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s);
+      alert('Attendance recorded for ' + records.length + ' students');
     } catch {
-      alert('Attendance update failed')
-      // Refetch on failure to revert
-      const att = await getAttendance(staffKey, attendanceDate, selectedYear)
-      setState(s => s.status === 'loaded' ? { ...s, attendance: att.attendance } : s)
+      alert('Attendance update failed');
+    } finally {
+      setIsSavingAttendance(false);
     }
   }
 
@@ -207,13 +223,25 @@ export default function StaffPage() {
 
   const batchRegs = confirmedRegs.filter(r => r.preferredBatchTime === selectedBatch)
 
-  function getAttStatus(regId: number) {
-    const found = attendance.find(a => a.registration_id === regId && a.date === attendanceDate)
-    return found?.status ?? null
-  }
 
   // ── Login Screen ────────────────────────────────────────────────────────────
   if (state.status === 'idle' || !staffKey) {
+    const onLogin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!loginUsername || !loginPassword) return;
+      setState({ status: 'loading' });
+      try {
+        const { ok, staffKey: key } = await staffLogin(loginUsername, loginPassword);
+        if (ok) {
+          setStaffKey(key);
+          localStorage.setItem(STAFF_KEY_LS, key);
+          void load(key);
+        }
+      } catch (err: any) {
+        setState({ status: 'error', message: err.message || 'Login failed' });
+      }
+    };
+
     return (
       <div className="flex min-h-[65vh] flex-col items-center justify-center p-6 text-center">
         <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-emerald-600 text-white shadow-2xl shadow-emerald-200">
@@ -221,25 +249,58 @@ export default function StaffPage() {
         </div>
         <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">Staff Gateway</h1>
         <p className="mt-4 max-w-md text-base md:text-lg font-medium text-slate-500 leading-relaxed">
-          Enter your staff access key to manage student registrations.
+          Sign in to your individual staff account to manage academy operations.
         </p>
-        <div className="mt-10 flex flex-col sm:flex-row w-full max-w-lg gap-4">
-          <input
-            type="password"
-            value={staffKey}
-            onChange={e => setStaffKey(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { const k = staffKey.trim(); setStaffKey(k); localStorage.setItem(STAFF_KEY_LS, k); void load(k) } }}
-            placeholder="Enter Staff Access Key"
-            className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-lg font-medium outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition shadow-sm"
-          />
+        
+        <form onSubmit={onLogin} className="mt-10 w-full max-w-md space-y-4">
+          <div className="space-y-4">
+            <div className="relative group">
+              <i className="bi bi-person absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
+              <input
+                type="text"
+                value={loginUsername}
+                onChange={e => setLoginUsername(e.target.value)}
+                placeholder="Username"
+                className="w-full rounded-2xl border border-slate-200 bg-white pl-14 pr-6 py-4 text-lg font-medium outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition shadow-sm"
+                required
+              />
+            </div>
+            
+            <div className="relative group">
+              <i className="bi bi-shield-lock absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
+              <input
+                type={showLoginPassword ? 'text' : 'password'}
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+                placeholder="Password"
+                className="w-full rounded-2xl border border-slate-200 bg-white pl-14 pr-14 py-4 text-lg font-medium outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition shadow-sm"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowLoginPassword(!showLoginPassword)}
+                className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
+              >
+                <i className={`bi ${showLoginPassword ? 'bi-eye-slash' : 'bi-eye'} text-lg`} />
+              </button>
+            </div>
+          </div>
+
           <button
-            onClick={() => { const k = staffKey.trim(); setStaffKey(k); localStorage.setItem(STAFF_KEY_LS, k); void load(k) }}
-            className="rounded-2xl bg-emerald-600 px-8 py-4 font-bold text-white hover:bg-emerald-700 transition"
+            type="submit"
+            disabled={state.status === 'loading'}
+            className="w-full rounded-2xl bg-emerald-600 py-5 font-black text-white hover:bg-emerald-700 transition shadow-xl shadow-emerald-100 flex items-center justify-center gap-3 active:scale-[0.98]"
           >
-            Authenticate
+            {state.status === 'loading' ? <div className="h-6 w-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (
+              <>
+                <span className="tracking-tight uppercase">Enter Dashboard</span>
+                <i className="bi bi-arrow-right" />
+              </>
+            )}
           </button>
-        </div>
-        {state.status === 'error' && <p className="mt-6 font-bold text-red-500">{state.message}</p>}
+        </form>
+
+        {state.status === 'error' && <p className="mt-6 font-bold text-red-500 bg-red-50 px-6 py-3 rounded-xl border border-red-100 inline-block">{state.message}</p>}
       </div>
     )
   }
@@ -434,13 +495,23 @@ export default function StaffPage() {
               
               <div className="flex items-center gap-3 bg-slate-50/50 p-1.5 pr-2 rounded-2xl border border-slate-100">
                 <label className="text-[10px] pl-3 font-black uppercase tracking-widest text-slate-400">Record Date</label>
-                <input
-                  type="date"
-                  value={attendanceDate}
-                  onChange={e => setAttendanceDate(e.target.value)}
-                  className="rounded-xl bg-white border border-slate-200 px-4 py-1.5 text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition cursor-pointer"
-                  max={new Date().toISOString().split('T')[0]}
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={attendanceDate}
+                    onChange={e => setAttendanceDate(e.target.value)}
+                    className="rounded-xl bg-white border border-slate-200 px-4 py-1.5 text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition cursor-pointer"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  {attendanceDate !== new Date().toISOString().split('T')[0] && (
+                    <button
+                      onClick={() => setAttendanceDate(new Date().toISOString().split('T')[0])}
+                      className="rounded-xl bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-600 hover:bg-emerald-100 transition border border-emerald-100"
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             {batchRegs.length === 0 ? (
@@ -455,39 +526,43 @@ export default function StaffPage() {
                         <p className="text-xs text-slate-400">{reg.courseSelected} • {reg.mobileNumber}</p>
                       </div>
                       <div className="flex items-center gap-4">
-                        {(() => {
-                          const status = getAttStatus(reg.id);
-                          if (status) {
-                            return (
-                              <div className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-[10px] font-black uppercase tracking-wider ${
-                                status === 'Present' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'
-                              }`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${status === 'Present' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                                {status}
-                              </div>
-                            );
-                          }
-                          return (
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleAttendanceSet(reg.id, 'Present')}
-                                className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-black text-white hover:bg-emerald-700 transition shadow-sm shadow-emerald-200"
-                              >
-                                Mark Present
-                              </button>
-                              <button
-                                onClick={() => handleAttendanceSet(reg.id, 'Absent')}
-                                className="rounded-xl bg-red-600 px-4 py-1.5 text-xs font-black text-white hover:bg-red-700 transition shadow-sm shadow-red-200"
-                              >
-                                Mark Absent
-                              </button>
-                            </div>
-                          );
-                        })()}
+                        <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                          {[
+                            { id: 'Present', color: 'bg-emerald-600' },
+                            { id: 'Absent', color: 'bg-red-600' }
+                          ].map(opt => (
+                            <button
+                              key={opt.id}
+                              onClick={() => setStagedAttendance(prev => ({ ...prev, [reg.id]: opt.id }))}
+                              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                                stagedAttendance[reg.id] === opt.id 
+                                  ? `${opt.color} text-white shadow-sm` 
+                                  : 'text-slate-400 hover:text-slate-600 hover:bg-white/50'
+                              }`}
+                            >
+                              {opt.id}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )
                 })}
+                
+                <div className="px-6 py-8 flex justify-center bg-slate-50/30 border-t border-slate-100">
+                  <button
+                    onClick={handleBatchAttendanceSave}
+                    disabled={isSavingAttendance || batchRegs.length === 0}
+                    className="flex items-center gap-3 rounded-2xl bg-emerald-600 px-12 py-4 font-black text-white hover:bg-emerald-700 transition shadow-2xl shadow-emerald-200 disabled:opacity-50 active:scale-95"
+                  >
+                    {isSavingAttendance ? (
+                      <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={20} />
+                    )}
+                    {isSavingAttendance ? 'Recording Attendance...' : 'Record Batch Attendance'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
