@@ -1285,18 +1285,18 @@ app.get("/api/admin/analytics", verifyAdmin, async (req: any, res: any) => {
 
     // Revenue Trend (Last 6 Months)
     const revenueByMonth: Record<string, number> = {};
-    payments?.forEach(p => {
+    (payments as any[] | null)?.forEach((p: any) => {
       const month = new Date(p.date).toLocaleString('default', { month: 'short', year: '2-digit' });
       revenueByMonth[month] = (revenueByMonth[month] || 0) + Number(p.amount_paid);
     });
 
     // Registration vs Confirmed conversion
     const totalRegs = regs?.length || 0;
-    const confirmedRegs = regs?.filter(r => r.status === 'Confirmed').length || 0;
+    const confirmedRegs = (regs as any[] | null)?.filter((r: any) => r.status === 'Confirmed').length || 0;
     const conversionRate = totalRegs > 0 ? Math.round((confirmedRegs / totalRegs) * 100) : 0;
 
     res.json({
-      revenueTrend: Object.entries(revenueByMonth).map(([name, value]) => ({ name, value })),
+      revenueTrend: Object.entries(revenueByMonth).map(([name, value]: [string, number]) => ({ name, value })),
       conversionRate,
       totalRegistrations: totalRegs,
       confirmedStudents: confirmedRegs
