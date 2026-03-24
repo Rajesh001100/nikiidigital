@@ -13,7 +13,7 @@ const currentDir = path.dirname(currentFile).replace(/^\/([A-Z]:)/, '$1');
 const envPath = path.join(currentDir, '../.env');
 dotenv.config({ path: envPath });
 
-import { supabase } from "./db.js";
+import { supabase, withRetry } from "./db.js";
 
 const PORT = process.env.PORT || "5188";
 console.log(`Server: Loading env from ${envPath}. Using port ${PORT}`);
@@ -373,28 +373,23 @@ app.get("/api/health", (_req, res) => {
 // --- Combined Initial Data Endpoint ---
 app.get("/api/initial-data", async (req, res) => {
   const forceRefresh = req.headers['cache-control'] === 'no-cache';
-  const cached = forceRefresh ? null : getFromCache('initial-data');
+  const cached = getFromCache<any>('initial-data');
 
-  if (cached) {
+  // If we have valid cache and no force refresh, return it
+  if (cached && !forceRefresh) {
     console.log("Serving initial-data from cache");
     return res.json(cached);
   }
 
   try {
     console.log("Fetching fresh initial-data from Supabase...");
-    const [coursesRes, settingsRes] = await Promise.all([
+    const [coursesRes, settingsRes] = await withRetry<any>(() => Promise.all([
       supabase.from('courses').select('*').order('createdAt', { ascending: false }),
       supabase.from('settings').select('*')
-    ]);
+    ]));
 
-    if (coursesRes.error) {
-      console.error("Supabase Courses Error:", coursesRes.error);
-      throw coursesRes.error;
-    }
-    if (settingsRes.error) {
-      console.error("Supabase Settings Error:", settingsRes.error);
-      throw settingsRes.error;
-    }
+    if (coursesRes.error) throw coursesRes.error;
+    if (settingsRes.error) throw settingsRes.error;
 
     console.log(`Found ${coursesRes.data?.length || 0} courses and ${settingsRes.data?.length || 0} settings rows.`);
 
@@ -416,7 +411,22 @@ app.get("/api/initial-data", async (req, res) => {
     res.json(data);
   } catch (err: any) {
     console.error("CRITICAL: Initial data fetch error:", err.message || err);
-    res.status(500).json({ error: "Internal Server Error", details: err.message || String(err) });
+    
+    // Stale-While-Revalidate: If we have ANY cache (even expired), return it on error
+    if (cache['initial-data']) {
+      console.warn("⚠️ Database fetch failed, returning stale cache as fallback.");
+      return res.json({
+        ...cache['initial-data'].data,
+        source: 'stale-cache',
+        error: "Database temporary unreachable, showing cached data."
+      });
+    }
+
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      details: err.message || String(err),
+      hint: "Check server logs for database connectivity issues."
+    });
   }
 });
 
@@ -512,7 +522,7 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
   const normalizedMobile = parsed.data.mobileNumber.replace(/\D/g, '').slice(-10);
 
   try {
-    const { data: settingsData } = await supabase.from('settings').select('*');
+    const { data: settingsData } = await withRetry<any>(() => supabase.from('settings').select('*'));
     const settings: any = settingsData?.reduce((acc: any, item: any) => ({...acc, [item.key]: item.value}), {}) || {};
     console.log("DEBUG: Settings keys:", Object.keys(settings));
     let currentAcademicYear = settings.currentAcademicYear || '2026-2027';
@@ -522,11 +532,11 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
     if (parsed.data.promoCode) {
       const activePromo = settings.promoCodes?.find((p: any) => p.code.toUpperCase() === parsed.data.promoCode?.toUpperCase());
       if (activePromo) {
-        const { data: courseData } = await supabase
+        const { data: courseData } = await withRetry<any>(() => supabase
           .from('courses')
           .select('totalFee')
           .eq('title', parsed.data.courseSelected)
-          .maybeSingle();
+          .maybeSingle());
         
         const baseFee = courseData?.totalFee || 0;
         if (activePromo.discount.includes('%')) {
@@ -538,7 +548,21 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
       }
     }
 
-    const { data, error } = await supabase
+    // --- Idempotency Check: Prevent Double Registration ---
+    const { data: existingReg } = await withRetry<any>(() => supabase
+      .from('registrations')
+      .select('id')
+      .eq('mobileNumber', normalizedMobile)
+      .eq('courseSelected', parsed.data.courseSelected)
+      .eq('academic_year', currentAcademicYear)
+      .maybeSingle());
+
+    if (existingReg) {
+      console.log(`INFO: Duplicate registration detected for ${normalizedMobile} / ${parsed.data.courseSelected}. Returning existing ID: ${existingReg.id}`);
+      return res.json({ ok: true, registrationId: existingReg.id, message: "Checked existing registration." });
+    }
+
+    const { data, error } = await withRetry<any>(() => supabase
       .from('registrations')
       .insert({
         ...parsed.data,
@@ -549,7 +573,7 @@ app.post("/api/registrations", registrationLimiter, async (req, res) => {
         createdAt
       })
       .select('id')
-      .single();
+      .single());
 
     if (error) throw error;
 
@@ -978,6 +1002,23 @@ app.post("/api/admin/payments", verifyStaff, async (req: any, res: any) => {
   const parsed = PaymentInput.safeParse(body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid payment data" });
   try {
+    // --- Idempotency Check: Prevent Double Payment ---
+    // Check if a payment with same reg_id and amount was made in the last 15 mins
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: existingPayment } = await withRetry<any>(() => supabase
+      .from('payments')
+      .select('id')
+      .eq('registration_id', parsed.data.registration_id)
+      .eq('amount_paid', parsed.data.amount_paid)
+      .eq('payment_type', parsed.data.payment_type)
+      .gte('date', fifteenMinsAgo)
+      .maybeSingle());
+
+    if (existingPayment) {
+      console.log(`INFO: Duplicate payment detected for RegID ${parsed.data.registration_id}. Returning existing ID: ${existingPayment.id}`);
+      return res.json({ ok: true, payment: existingPayment, message: "Duplicate payment suppressed." });
+    }
+
     const { data, error } = await supabase
       .from('payments')
       .insert({

@@ -51,3 +51,31 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 export type Tables = {
   registrations: Registration;
 };
+
+/**
+ * Helper to retry a function that returns a promise.
+ * Useful for handling transient network errors/timeouts with Supabase.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T> | PromiseLike<T>,
+  retries = 3,
+  delay = 1000
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: any) {
+    const isNetworkError = 
+      err.message?.includes("fetch failed") || 
+      err.message?.includes("ConnectTimeoutError") ||
+      err.message?.includes("UND_ERR_CONNECT_TIMEOUT") ||
+      err.code === "ECONNRESET" ||
+      err.code === "ETIMEDOUT";
+
+    if (retries > 0 && isNetworkError) {
+      console.warn(`⚠️ Supabase connection issue. Retrying in ${delay}ms... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw err;
+  }
+}

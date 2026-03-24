@@ -2368,7 +2368,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* â”€â”€ CONFIRM REGISTRATION MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* --- CONFIRM REGISTRATION MODAL --- */}
       {confirmingStudent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-[2.5rem] bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300 space-y-6">
@@ -2404,7 +2404,7 @@ export default function AdminPage() {
                   {disc > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-orange-500 font-bold uppercase text-[10px] tracking-widest">Discount</span>
-                      <span className="font-black text-orange-500">âˆ’ ₹{disc}</span>
+                      <span className="font-black text-orange-500">− ₹{disc}</span>
                     </div>
                   )}
                   <div className="flex justify-between pt-3 border-t border-slate-200">
@@ -2419,7 +2419,7 @@ export default function AdminPage() {
             <div className="space-y-2">
               <label className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-orange-400 inline-block" />
-                Discount Amount (₹) "” Optional
+                Discount Amount (₹) – Optional
               </label>
               <input
                 type="number"
@@ -2457,123 +2457,136 @@ export default function AdminPage() {
         </div>
       )}
 
-      {studentPayment && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-[2.5rem] bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300">
-            <h2 className="text-2xl font-black text-slate-900 mb-1">Record Fee Payment</h2>
-            <p className="text-slate-400 mb-6 text-sm">
-              For <span className="font-bold text-blue-600">{studentPayment.fullName}</span> "” {studentPayment.courseSelected}
-            </p>
-            <form onSubmit={handleAddPayment} className="space-y-5">
-              {/* Flexible Payment Display */}
-              <div className="rounded-3xl bg-slate-50 p-6 space-y-4">
-                {(() => {
-                  const course = courses.find(c => c.title === studentPayment.courseSelected);
-                  const baseFee = course?.totalFee || 0;
-                  const discount = studentPayment.discount_amount || 0;
-                  const netFee = Math.max(0, baseFee - discount);
+      {studentPayment && (() => {
+        const course = courses.find(c => c.title === studentPayment.courseSelected);
+        const baseFee = course?.totalFee || 0;
+        const discount = studentPayment.discount_amount || 0;
+        const netFee = Math.max(0, baseFee - discount);
+        
+        const previousPayments = state.status === 'loaded' 
+          ? state.payments.filter(p => p.registration_id === studentPayment.id)
+          : [];
+        const totalPaid = previousPayments.reduce((sum, p) => sum + p.amount_paid, 0);
+        const balance = Math.max(0, netFee - totalPaid);
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-lg rounded-[2.5rem] bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+              <h2 className="text-2xl font-black text-slate-900 mb-1">Record Fee Payment</h2>
+              <p className="text-slate-400 mb-6 text-sm">
+                For <span className="font-bold text-blue-600">{studentPayment.fullName}</span> – {studentPayment.courseSelected}
+              </p>
+              <form onSubmit={handleAddPayment} className="space-y-5">
+                {/* Flexible Payment Display */}
+                <div className="rounded-3xl bg-slate-50 p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Net Fee</p>
+                      <p className="text-xl font-black text-slate-900">₹{netFee}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Paid</p>
+                      <p className="text-xl font-black text-emerald-600">₹{totalPaid}</p>
+                    </div>
+                  </div>
+                  <div className="pt-4 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black uppercase tracking-widest text-slate-400">Outstanding Balance</p>
+                      <p className="text-2xl font-black text-blue-600">₹{balance}</p>
+                    </div>
+                  </div>
                   
-                  const previousPayments = state.status === 'loaded' 
-                    ? state.payments.filter(p => p.registration_id === studentPayment.id)
-                    : [];
-                  const totalPaid = previousPayments.reduce((sum, p) => sum + p.amount_paid, 0);
-                  const balance = Math.max(0, netFee - totalPaid);
-
-                  return (
-                    <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="text-center">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Net Fee</p>
-                          <p className="text-xl font-black text-slate-900">₹{netFee}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Paid</p>
-                          <p className="text-xl font-black text-emerald-600">₹{totalPaid}</p>
-                        </div>
-                      </div>
-                      <div className="pt-4 border-t border-slate-200">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-black uppercase tracking-widest text-slate-400">Outstanding Balance</p>
-                          <p className="text-2xl font-black text-blue-600">₹{balance}</p>
-                        </div>
-                      </div>
-                      
-                      {previousPayments.length > 0 && (
-                        <div className="pt-4 border-t border-slate-200">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Recent Payments</p>
-                          <div className="space-y-1.5">
-                            {previousPayments.slice(-3).map((p, i) => (
-                              <div key={i} className="flex justify-between text-[11px] font-bold text-slate-600">
-                                <span className="text-slate-400 font-medium">#{p.id} • {new Date(p.date).toLocaleDateString()}</span>
-                                <span className="text-emerald-600">₹{p.amount_paid} ({p.payment_method})</span>
-                              </div>
-                            ))}
+                  {previousPayments.length > 0 && (
+                    <div className="pt-4 border-t border-slate-200">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Recent Payments</p>
+                      <div className="space-y-1.5">
+                        {previousPayments.slice(-3).map((p, i) => (
+                          <div key={i} className="flex justify-between text-[11px] font-bold text-slate-600">
+                            <span className="text-slate-400 font-medium">#{p.id} • {new Date(p.date).toLocaleDateString()}</span>
+                            <span className="text-emerald-600">₹{p.amount_paid} ({p.payment_method})</span>
                           </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Amount Input */}
-              <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Amount (₹)</label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  placeholder="e.g. 2000"
-                  value={paymentForm.custom_amount}
-                  onChange={e => setPaymentForm({ ...paymentForm, custom_amount: e.target.value })}
-                  className="w-full rounded-xl bg-slate-50 border-2 border-slate-100 px-4 py-2.5 text-base font-black text-slate-900 focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition outline-none"
-                />
-              </div>
-
-              {/* Payment Method */}
-              <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Method</label>
-                <div className="grid grid-cols-5 gap-2">
-                  {(['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'DD'] as const).map(m => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setPaymentForm(prev => ({ ...prev, payment_method: m }))}
-                      className={`rounded-xl py-2.5 px-1 text-[10px] font-black text-center border-2 transition ${paymentForm.payment_method === m
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-slate-100 text-slate-400 hover:border-slate-300'
-                        }`}
-                    >
-                      {m === 'Cash' ? 'ðŸ’µ' : m === 'UPI' ? 'ðŸ“±' : m === 'Bank Transfer' ? 'ðŸ¦' : m === 'Cheque' ? 'ðŸ“' : 'ðŸ›ï¸'}<br />{m}
-                    </button>
-                  ))}
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
 
-              {/* Remarks */}
-              <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Remarks (Optional)</label>
-                <input
-                  type="text"
-                  value={paymentForm.remarks}
-                  onChange={e => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
-                  className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-medium text-slate-900 focus:outline-none"
-                  placeholder="e.g. Reference number, receipt ID..."
-                />
-              </div>
+                {/* Amount Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Amount (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={balance}
+                    placeholder={`Max ₹${balance}`}
+                    value={paymentForm.custom_amount}
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      if (val > balance) {
+                         alert(`Amount cannot exceed the balance of ₹${balance}`);
+                         setPaymentForm({ ...paymentForm, custom_amount: balance.toString() });
+                      } else {
+                         setPaymentForm({ ...paymentForm, custom_amount: e.target.value });
+                      }
+                    }}
+                    className="w-full rounded-xl bg-slate-50 border-2 border-slate-100 px-4 py-2.5 text-base font-black text-slate-900 focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 transition outline-none"
+                  />
+                  {Number(paymentForm.custom_amount) > balance && (
+                    <p className="text-[10px] font-bold text-red-500">⚠ Amount exceeds outstanding balance!</p>
+                  )}
+                </div>
 
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 rounded-2xl bg-blue-600 py-3 text-sm font-black text-white hover:bg-blue-700 transition shadow-xl shadow-blue-200">
-                  âœ… Confirm & Record
-                </button>
-                <button type="button" onClick={() => setStudentPayment(null)} className="rounded-2xl px-6 py-3 bg-slate-100 text-slate-400 font-black hover:bg-slate-200 transition">
-                  Cancel
-                </button>
-              </div>
-            </form>
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Payment Method</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    {(['Cash', 'UPI'] as const).map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPaymentForm(prev => ({ ...prev, payment_method: m }))}
+                        className={`rounded-xl py-4 px-1 text-xs font-black text-center border-2 transition ${paymentForm.payment_method === m
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-slate-100 text-slate-400 hover:border-slate-300'
+                          }`}
+                      >
+                        <span className="text-xl mb-1 block">{m === 'Cash' ? '💵' : '📱'}</span>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400">Remarks (Optional)</label>
+                  <input
+                    type="text"
+                    value={paymentForm.remarks}
+                    onChange={e => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
+                    className="w-full rounded-xl bg-slate-50 border-none px-4 py-2.5 text-sm font-medium text-slate-900 focus:outline-none"
+                    placeholder="e.g. Reference number, receipt ID..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="submit" 
+                    disabled={Number(paymentForm.custom_amount) > balance || !paymentForm.custom_amount}
+                    className="flex-1 rounded-2xl bg-blue-600 py-4 text-sm font-black text-white hover:bg-blue-700 transition shadow-xl shadow-blue-200 disabled:opacity-50 disabled:bg-slate-300 disabled:shadow-none"
+                  >
+                    ✅ Confirm & Record
+                  </button>
+                  <button type="button" onClick={() => setStudentPayment(null)} className="rounded-2xl px-6 py-4 bg-slate-100 text-slate-400 font-black hover:bg-slate-200 transition">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
        {viewingStudentHistory && (
          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
            <div className="w-full max-w-2xl rounded-[3rem] bg-white p-8 md:p-12 shadow-2xl animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">

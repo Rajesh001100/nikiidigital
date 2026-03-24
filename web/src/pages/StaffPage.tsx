@@ -574,67 +574,95 @@ export default function StaffPage() {
       {activeTab === 'payments' && (
         <div className="space-y-8">
           {/* Add Payment Modal */}
-          {studentPayment && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl p-8 space-y-6 animate-in zoom-in-95 duration-300">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-black text-slate-900">Record Payment</h3>
-                    <p className="text-sm font-medium text-slate-500 mt-0.5">{studentPayment.fullName}</p>
-                  </div>
-                  <button onClick={() => setStudentPayment(null)} className="p-2 rounded-xl hover:bg-slate-100 transition"><X size={20} /></button>
-                </div>
+          {studentPayment && (() => {
+            const course = courses.find(c => c.title === studentPayment.courseSelected);
+            const netFee = Math.max(0, (course?.totalFee || 0) - (studentPayment.discount_amount || 0));
+            const paid = payments.filter(p => p.registration_id === studentPayment.id).reduce((s, p) => s + p.amount_paid, 0);
+            const balance = Math.max(0, netFee - paid);
 
-                <form onSubmit={handleAddPayment} className="space-y-5">
-                  {/* Amount */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400">Amount (₹)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      required
-                      value={payForm.custom_amount}
-                      onChange={e => setPayForm(p => ({ ...p, custom_amount: e.target.value }))}
-                      placeholder="e.g. 3000"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition text-base"
-                    />
-                  </div>
-
-                  {/* Payment Method */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400">Method</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['Cash', 'UPI'] as const).map(m => (
-                        <label key={m} className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-2 cursor-pointer text-xs font-bold transition-all ${payForm.payment_method === m ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-500 hover:border-slate-300'}`}>
-                          <input type="radio" value={m} checked={payForm.payment_method === m} onChange={() => setPayForm(p => ({ ...p, payment_method: m }))} className="hidden" />
-                          {m === 'Cash' ? '💵' : '📱'} {m}
-                        </label>
-                      ))}
+            return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl p-8 space-y-6 animate-in zoom-in-95 duration-300">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900">Record Payment</h3>
+                      <p className="text-sm font-medium text-slate-500 mt-0.5">{studentPayment.fullName}</p>
                     </div>
+                    <button onClick={() => setStudentPayment(null)} className="p-2 rounded-xl hover:bg-slate-100 transition"><X size={20} /></button>
                   </div>
 
-                  {/* Remarks */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400">Remarks (Optional)</label>
-                    <input
-                      type="text"
-                      value={payForm.remarks}
-                      onChange={e => setPayForm(p => ({ ...p, remarks: e.target.value }))}
-                      placeholder="e.g. Second installment"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition"
-                    />
+                  <div className="bg-emerald-50/50 rounded-2xl p-4 border border-emerald-100 flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-emerald-600">Outstanding Balance</span>
+                    <span className="text-xl font-black text-emerald-700">₹{balance}</span>
                   </div>
 
-                  <div className="flex gap-3 pt-2">
-                    <button type="button" onClick={() => setStudentPayment(null)} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50 transition">Cancel</button>
-                    <button type="submit" disabled={payBusy} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 transition disabled:opacity-60">
-                      {payBusy ? 'Recording...' : '✓ Confirm & Record'}
-                    </button>
-                  </div>
-                </form>
+                  <form onSubmit={handleAddPayment} className="space-y-5">
+                    {/* Amount */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Amount (₹)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={balance}
+                        required
+                        value={payForm.custom_amount}
+                        onChange={e => {
+                          const val = Number(e.target.value);
+                          if (val > balance) {
+                            alert(`Amount cannot exceed the balance of ₹${balance}`);
+                            setPayForm(p => ({ ...p, custom_amount: balance.toString() }));
+                          } else {
+                            setPayForm(p => ({ ...p, custom_amount: e.target.value }));
+                          }
+                        }}
+                        placeholder={`Max ₹${balance}`}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 font-bold text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition text-base"
+                      />
+                      {Number(payForm.custom_amount) > balance && (
+                        <p className="text-[10px] font-bold text-red-500">⚠ Amount exceeds outstanding balance!</p>
+                      )}
+                    </div>
+
+                    {/* Payment Method */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Method</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['Cash', 'UPI'] as const).map(m => (
+                          <label key={m} className={`flex items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-3 cursor-pointer text-xs font-bold transition-all ${payForm.payment_method === m ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-500 hover:border-slate-300'}`}>
+                            <input type="radio" value={m} checked={payForm.payment_method === m} onChange={() => setPayForm(p => ({ ...p, payment_method: m }))} className="hidden" />
+                            <span className="text-lg">{m === 'Cash' ? '💵' : '📱'}</span> {m}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Remarks */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-black uppercase tracking-widest text-slate-400">Remarks (Optional)</label>
+                      <input
+                        type="text"
+                        value={payForm.remarks}
+                        onChange={e => setPayForm(p => ({ ...p, remarks: e.target.value }))}
+                        placeholder="e.g. Second installment"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition"
+                      />
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button type="button" onClick={() => setStudentPayment(null)} className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 transition">Cancel</button>
+                      <button 
+                        type="submit" 
+                        disabled={payBusy || Number(payForm.custom_amount) > balance || !payForm.custom_amount} 
+                        className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700 transition shadow-xl shadow-emerald-100 disabled:opacity-50 disabled:bg-slate-300 disabled:shadow-none"
+                      >
+                        {payBusy ? 'Recording...' : '✅ Confirm & Record'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Confirmed Students with SEARCH & FILTER */}
           <div className="rounded-3xl border border-slate-100 bg-white shadow-sm overflow-hidden">
