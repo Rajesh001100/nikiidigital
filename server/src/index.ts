@@ -251,10 +251,8 @@ app.post("/api/student/login", async (req, res) => {
       return res.status(401).json({ error: "Log in failed. Check your mobile number and password." });
     }
 
-    const confirmed = data.filter(d => d.status === 'Confirmed');
-
-    // Check password (matches stored password OR matches dateOfBirth as a legacy/default)
-    const valid = confirmed.filter(c => {
+    const confirmed = (data as any[]).filter((d: any) => d.status === 'Confirmed');
+    const valid = confirmed.filter((c: any) => {
       const storedPass = (c as any).password || c.dateOfBirth;
       return storedPass === parsed.data.password;
     });
@@ -395,7 +393,7 @@ app.get("/api/initial-data", async (req, res) => {
 
     const settings: any = {};
     if (settingsRes.data) {
-      settingsRes.data.forEach(item => {
+      (settingsRes.data as any[]).forEach((item: any) => {
         if (item && item.key) settings[item.key] = item.value;
       });
     }
@@ -1318,7 +1316,7 @@ app.post("/api/admin/check-absentees", verifyAdmin, async (req: any, res: any) =
     if (error) throw error;
 
     const studentHistory: Record<number, string[]> = {};
-    att.forEach(a => {
+    (att as any[]).forEach((a: any) => {
       if (!studentHistory[a.registration_id]) studentHistory[a.registration_id] = [];
       studentHistory[a.registration_id].push(a.status);
     });
